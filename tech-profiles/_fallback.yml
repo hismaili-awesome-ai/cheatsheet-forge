@@ -1,0 +1,28 @@
+tech: _fallback
+detect_binaries: []
+authoritative_docs: []
+instructions: |
+  No profile exists for this technology. Do not skip mandate 4.
+
+  1. Identify the tool from the command binaries and the topic directory.
+  2. Search for its official documentation — vendor or project site, never a blog or
+     aggregator — and verify syntax, flags and API paths against it.
+  3. Work at reduced confidence and say so explicitly in your report.
+  4. Apply the generic destructive heuristics below.
+  5. Close by proposing the profile that should be added: authoritative docs,
+     destructive patterns with real consequences, secret patterns, and footguns.
+
+generic_destructive_patterns:
+  - 'rm -rf'
+  - 'DROP (TABLE|DATABASE|SCHEMA)'
+  - '--force'
+  - '--hard'
+  - 'delete|destroy|purge|prune|truncate|wipe'
+  - 'kill|-9|fuser -k'
+  - 'chmod 777'
+  - 'curl .* \| (sudo )?(ba)?sh'
+generic_secret_patterns:
+  - 'password|passwd|secret|token|api[_-]?key|credential'
+  - '-----BEGIN .*PRIVATE KEY-----'
+  - '/Users/|/home/'
+  - 'AKIA[0-9A-Z]{16}'

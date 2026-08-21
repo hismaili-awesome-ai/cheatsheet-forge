@@ -1,0 +1,10 @@
+tech: git
+detect_binaries: [git]
+authoritative_docs:
+  - https://git-scm.com/docs
+destructive_patterns: []
+secret_patterns: []
+footguns: []
+# STUB — populate on first real review of this topic. Until then the reviewer
+# falls back to _fallback.yml behaviour and must report reduced confidence.
+stub: true

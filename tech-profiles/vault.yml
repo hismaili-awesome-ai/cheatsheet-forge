@@ -1,0 +1,23 @@
+tech: vault
+detect_binaries: [vault]
+authoritative_docs:
+  - https://developer.hashicorp.com/vault/docs
+  - https://developer.hashicorp.com/vault/api-docs
+destructive_patterns:
+  - pattern: 'vault operator init'
+    consequence: Initialises a new Vault; unseal keys and root token are shown once and never again.
+  - pattern: 'vault secrets disable'
+    consequence: Permanently deletes every secret under that mount path.
+  - pattern: 'vault lease revoke'
+    consequence: Immediately invalidates issued credentials; live clients lose access.
+  - pattern: 'vault policy delete'
+    consequence: Strips permissions from every identity bound to the policy.
+secret_patterns: ["hvs.", "hvb.", "s.[A-Za-z0-9]{20}", "unseal", "root_token", "role-id", "secret-id"]
+footguns:
+  - kv-v1 and kv-v2 take different paths; kv-v2 inserts /data/ in API paths but not in CLI paths.
+  - A policy written via 'vault policy write NAME -' reads from stdin; the heredoc is part of the command.
+  - AppRole secret-id values are credentials and must never appear in documentation.
+  - Unseal keys shown at init cannot be recovered; documenting a real one is a permanent compromise.
+version_sensitive:
+  - Namespaces are Vault Enterprise only
+  - Agent auto-auth config format changed in 1.11+

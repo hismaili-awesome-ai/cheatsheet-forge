@@ -1,0 +1,26 @@
+tech: openshift
+detect_binaries: [oc, kubectl, argocd]
+authoritative_docs:
+  - https://docs.redhat.com/en/documentation/openshift_container_platform
+  - https://kubernetes.io/docs/reference/kubectl/
+  - https://argo-cd.readthedocs.io/en/stable/
+destructive_patterns:
+  - pattern: 'finalizers":null'
+    consequence: Orphans every resource the owner managed; the controller stops tracking and will never clean them up.
+  - pattern: 'oc delete crd'
+    consequence: Deletes every custom resource of that type cluster-wide, across all namespaces.
+  - pattern: '"prune":true'
+    consequence: Deletes live resources no longer present in Git.
+  - pattern: 'force":true'
+    consequence: Replaces resources rather than patching; in-flight state is lost.
+  - pattern: 'oc delete (project|namespace)'
+    consequence: Destroys every workload in the namespace.
+secret_patterns: [sha256~, 'Bearer ', '.svc.cluster.local', kubeconfig, 'system:serviceaccount:']
+footguns:
+  - Short resource names (applications, obc, routes) are ambiguous; operator CRDs must be addressed by full API group.
+  - jsonpath .status.sync.status and .status.health.status are different things on an ArgoCD Application; both are valid to query.
+  - ConfigMap .data is plain text in most clusters but base64 in some setups; do not assume either.
+  - Deleting a CRD before its instances leaves namespaces stuck Terminating.
+version_sensitive:
+  - oc adm policy syntax changed across 3.x/4.x
+  - Loki tenant API paths differ between LokiStack versions

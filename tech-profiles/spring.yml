@@ -1,0 +1,10 @@
+tech: spring
+detect_binaries: [mvn, gradle, java, spring]
+authoritative_docs:
+  - https://docs.spring.io/spring-boot/docs/current/reference/html/
+destructive_patterns: []
+secret_patterns: []
+footguns: []
+# STUB — populate on first real review of this topic. Until then the reviewer
+# falls back to _fallback.yml behaviour and must report reduced confidence.
+stub: true

@@ -1,0 +1,10 @@
+tech: kafka
+detect_binaries: [kafka-topics, kafka-console-producer, kafka-console-consumer]
+authoritative_docs:
+  - https://kafka.apache.org/documentation/
+destructive_patterns: []
+secret_patterns: []
+footguns: []
+# STUB — populate on first real review of this topic. Until then the reviewer
+# falls back to _fallback.yml behaviour and must report reduced confidence.
+stub: true

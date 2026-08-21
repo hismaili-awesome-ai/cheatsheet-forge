@@ -1,0 +1,24 @@
+tech: ruby
+detect_binaries: [gem, bundle, bundler, rails, rbenv, rvm, pod, ruby, irb, rake]
+authoritative_docs:
+  - https://guides.rubygems.org/
+  - https://bundler.io/docs.html
+  - https://guides.cocoapods.org/
+destructive_patterns:
+  - pattern: 'gem uninstall'
+    consequence: Removes the gem for every project relying on that version; other projects may break.
+  - pattern: 'gem cleanup'
+    consequence: Deletes all older gem versions; projects pinned to an old version stop resolving.
+  - pattern: 'bundle install --force|--redownload'
+    consequence: Re-fetches every dependency, discarding the vendored copy.
+  - pattern: 'rm -rf .*(\.gem|vendor/bundle)'
+    consequence: Destroys the local gem tree; everything must be reinstalled.
+secret_patterns: ['rubygems_api_key', 'credentials.yml.enc', 'master.key', 'BUNDLE_.*__PASSWORD']
+footguns:
+  - '`sudo gem install` with `--user-install` is contradictory: sudo installs as root while --user-install targets the invoking user''s home. On macOS this commonly lands gems somewhere neither the user nor root expects.'
+  - System Ruby on macOS (2.6.0) is Apple-managed and not writable without sudo; rbenv/rvm avoid the problem entirely.
+  - GEM_HOME must be exported before gem install for --user-install to resolve consistently.
+  - Gem executables are only reachable after $GEM_HOME/bin is on PATH.
+version_sensitive:
+  - macOS removed bundled Ruby in newer releases; 2.6.0 paths are version-specific
+  - RubyGems 3.x changed default install locations

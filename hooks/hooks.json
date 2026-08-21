@@ -1,0 +1,17 @@
+{
+  "description": "cheatsheet-forge deterministic write guard: blocks secret/PII leakage and cross-topic command contamination in cheat-sheet and site files. Not model-mediated.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

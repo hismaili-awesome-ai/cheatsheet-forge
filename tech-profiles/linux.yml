@@ -1,0 +1,29 @@
+tech: linux
+detect_binaries: [systemctl, journalctl, yum, dnf, apt, apt-get, lsof, fuser, useradd, chown, chmod]
+authoritative_docs:
+  - https://man7.org/linux/man-pages/
+  - https://www.freedesktop.org/software/systemd/man/
+destructive_patterns:
+  - pattern: 'fuser -k'
+    consequence: Force-kills every process holding the port, which may be a different service than the one intended. No confirmation, no graceful shutdown.
+  - pattern: 'kill -9|killall'
+    consequence: SIGKILL cannot be trapped; the process dies without flushing buffers or releasing locks cleanly.
+  - pattern: 'lsof -ti .* \| xargs kill'
+    consequence: Same as above, and kills every matching PID at once — an empty match can behave unexpectedly.
+  - pattern: 'rm -rf'
+    consequence: Irreversible recursive delete; no trash, no undo.
+  - pattern: 'chmod 777'
+    consequence: Grants write access to every user on the system; on a shared host this is a privilege-escalation path.
+  - pattern: 'systemctl (disable|mask)'
+    consequence: Stops the unit from starting at boot; masking makes it unstartable until explicitly unmasked.
+  - pattern: '> /etc/|tee /etc/'
+    consequence: Overwrites system configuration; a truncated file can make the host unbootable.
+secret_patterns: ['/Users/', '/home/', 'id_rsa', 'authorized_keys', '\.env', 'PASSWORD=', 'shadow']
+footguns:
+  - PATH order matters — 'export PATH=$NEW/bin:$PATH' shadows system binaries of the same name; appending instead of prepending gives the opposite precedence.
+  - An export only lives for the current shell. Without persisting it to .bash_profile/.zshrc/.profile it silently vanishes on the next login — which is why the export and the profile edit are a two-step pattern.
+  - .bash_profile is read by login shells, .bashrc by interactive non-login shells; macOS Terminal and most Linux terminals differ on which they use.
+  - fuser and lsof identify the port holder but do not tell you whether it is safe to kill it. Check what owns the port before killing.
+version_sensitive:
+  - systemd replaced SysV init; service/chkconfig commands differ on older distributions
+  - yum was superseded by dnf in RHEL 8+ (yum remains a symlink)
