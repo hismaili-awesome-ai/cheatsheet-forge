@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cheatsheet-forge</title>
+<meta name="description" content="A Claude Code plugin that turns raw terminal dumps into cheat sheets where every command traces back to the line it came from. Secrets and topic boundaries are enforced by a deterministic hook, not by asking a model nicely.">
+<meta property="og:title" content="cheatsheet-forge">
+<meta property="og:description" content="Terminal history in. Cited cheat sheets out. Nothing published that a model made up.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E7EAEC; --card:#F6F8F9; --ink:#16181B; --muted:#5B6167;
+  --rule:#C6CBD0; --bar:#0A0B0C; --bar-ink:#F6F8F9;
+  --stamp:#1F3FD1; --flag:#AE1F19; --pass:#1F6B4F;
+  --shadow:0 1px 0 rgba(22,24,27,.06), 0 12px 32px -20px rgba(22,24,27,.5);
+  --display:"Bricolage Grotesque","Archivo Black",Impact,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#14161A; --card:#1C1F24; --ink:#E9ECEE; --muted:#969DA5;
+    --rule:#31363D; --bar:#E9ECEE; --bar-ink:#14161A;
+    --stamp:#8FA5FF; --flag:#F2837C; --pass:#5FC79B;
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 12px 32px -20px rgba(0,0,0,.9);
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--body); font-size:17px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:74rem; margin:0 auto; padding:0 clamp(1.1rem,4vw,2.5rem)}
+a{color:inherit}
+h1,h2,h3{font-family:var(--display); font-weight:800; letter-spacing:-.022em; line-height:1.02; margin:0}
+
+/* ── provenance chip: the page's organising device ───────────────── */
+.ref{
+  font-family:var(--mono); font-size:.68rem; font-weight:500;
+  color:var(--stamp); text-decoration:none; white-space:nowrap;
+  border-bottom:1px solid color-mix(in srgb, var(--stamp) 35%, transparent);
+  padding-bottom:1px;
+}
+.ref::before{content:"↳ "; opacity:.55}
+.ref:hover{border-bottom-color:var(--stamp)}
+.ref:focus-visible{outline:2px solid var(--stamp); outline-offset:3px; border-radius:2px}
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+.mast{
+  display:flex; align-items:center; gap:.9rem; flex-wrap:wrap;
+  padding:1.4rem 0 1.1rem; border-bottom:1px solid var(--rule);
+}
+.mast__name{font-family:var(--mono); font-size:.9rem; font-weight:600; letter-spacing:-.01em}
+.mast__tag{
+  font-family:var(--mono); font-size:.66rem; font-weight:500; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted);
+  border:1px solid var(--rule); border-radius:2px; padding:.2rem .45rem;
+}
+.mast__spacer{flex:1}
+.mast__link{font-family:var(--mono); font-size:.8rem; text-decoration:none; border-bottom:1px solid var(--rule)}
+.mast__link:hover{border-bottom-color:var(--ink)}
+
+/* ── hero ─────────────────────────────────────────────────────────── */
+.hero{padding:clamp(3rem,9vw,6rem) 0 clamp(2.5rem,6vw,4rem)}
+.hero__eyebrow{
+  font-family:var(--mono); font-size:.72rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 1.4rem;
+}
+.hero__title{
+  font-size:clamp(2.9rem,10.5vw,7.5rem); font-weight:800;
+  letter-spacing:-.045em; line-height:.92;
+}
+.hero__title em{font-style:normal; color:var(--muted)}
+.hero__thesis{
+  font-size:clamp(1.15rem,2.6vw,1.6rem); line-height:1.35; max-width:34ch;
+  margin:1.6rem 0 0; font-weight:400; letter-spacing:-.012em;
+}
+.hero__sub{max-width:56ch; margin:1.1rem 0 0; color:var(--muted); font-size:1rem}
+
+/* ── the transformation: signature element ────────────────────────── */
+.transform{
+  display:grid; gap:.9rem; margin-top:clamp(2.4rem,5vw,3.4rem);
+  grid-template-columns:1fr; align-items:stretch;
+}
+@media (min-width:62rem){
+  .transform{grid-template-columns:1fr auto 1fr; gap:1.1rem}
+}
+.panel{
+  margin:0; background:var(--card); border:1px solid var(--rule); border-radius:3px;
+  box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column;
+}
+.panel__head{
+  display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap;
+  padding:.6rem .85rem; border-bottom:1px solid var(--rule);
+  font-family:var(--mono); font-size:.73rem;
+}
+.panel__head b{font-weight:600}
+.panel__head span{
+  margin-left:auto; font-size:.63rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+}
+.panel pre{
+  margin:0; padding:.95rem .85rem 1.1rem; font-family:var(--mono);
+  font-size:.79rem; line-height:1.75; overflow-x:auto; flex:1;
+}
+.dim{color:var(--muted)}
+.flag{color:var(--flag)}
+.pass{color:var(--pass)}
+.arrow{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.4rem;
+  font-family:var(--mono); font-size:.65rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--muted); padding:.4rem 0;
+}
+.arrow__glyph{font-size:1.5rem; letter-spacing:0; color:var(--ink)}
+@media (max-width:61.99rem){ .arrow__glyph{transform:rotate(90deg)} }
+
+/* redaction bar — nothing is hidden underneath, and that is the point */
+.redact{position:relative; display:inline-block; white-space:nowrap}
+.redact::after{
+  content:""; position:absolute; inset:-1px -3px;
+  background:var(--bar); border-radius:1px;
+  transform-origin:left center; transition:transform .34s cubic-bezier(.4,0,.2,1);
+}
+.panel:hover .redact::after,
+.panel:focus-within .redact::after{transform:scaleX(0)}
+.redact:hover::after{transform:scaleX(0)}
+.transform__note{
+  grid-column:1/-1; margin:.15rem 0 0; font-family:var(--mono);
+  font-size:.7rem; color:var(--muted);
+}
+
+/* ── install ──────────────────────────────────────────────────────── */
+.install{margin-top:clamp(2.2rem,5vw,3rem); max-width:44rem}
+.cmd{
+  display:flex; align-items:center; gap:.75rem; background:var(--card);
+  border:1px solid var(--rule); border-radius:3px; padding:.7rem .5rem .7rem .85rem;
+  font-family:var(--mono); font-size:.83rem; margin-bottom:.5rem;
+}
+.cmd code{flex:1; overflow-x:auto; white-space:nowrap; scrollbar-width:thin}
+.cmd__copy{
+  flex:none; font-family:var(--mono); font-size:.68rem; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--muted); background:none;
+  border:1px solid var(--rule); border-radius:2px; padding:.28rem .5rem; cursor:pointer;
+}
+.cmd__copy:hover{color:var(--ink); border-color:var(--ink)}
+.cmd__copy:focus-visible{outline:2px solid var(--stamp); outline-offset:2px}
+.install__note{font-size:.88rem; color:var(--muted); margin:.9rem 0 0}
+
+/* ── sections ─────────────────────────────────────────────────────── */
+.section{padding:clamp(3rem,7vw,5rem) 0; border-top:1px solid var(--rule)}
+.section__head{
+  display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:2.2rem;
+}
+.section__num{
+  font-family:var(--mono); font-size:.72rem; letter-spacing:.1em; color:var(--muted);
+}
+.section__title{font-size:clamp(1.6rem,4vw,2.5rem); letter-spacing:-.03em}
+.section__lede{max-width:58ch; color:var(--muted); margin:.9rem 0 0; flex-basis:100%}
+
+/* ── the ledger: observed failure → the control that answers it ───── */
+.ledger{display:grid; gap:0; border-top:1px solid var(--rule)}
+.entry{
+  display:grid; grid-template-columns:1fr; gap:.45rem;
+  padding:1.15rem 0; border-bottom:1px solid var(--rule);
+}
+@media (min-width:52rem){
+  .entry{grid-template-columns:1.05fr 1fr; gap:2rem; align-items:start}
+}
+.entry__failure{font-size:1rem; letter-spacing:-.01em}
+.entry__failure::before{
+  content:"observed"; display:block; font-family:var(--mono); font-size:.62rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--flag); margin-bottom:.3rem;
+}
+.entry__control{font-size:.95rem; color:var(--muted)}
+.entry__control::before{
+  content:"control"; display:block; font-family:var(--mono); font-size:.62rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--pass); margin-bottom:.3rem;
+}
+.entry__control .ref{display:inline-block; margin-top:.4rem}
+
+/* ── pipeline ─────────────────────────────────────────────────────── */
+.pipe{display:grid; gap:.7rem; grid-template-columns:1fr}
+@media (min-width:46rem){ .pipe{grid-template-columns:repeat(2,1fr)} }
+@media (min-width:70rem){ .pipe{grid-template-columns:repeat(4,1fr)} }
+.stage{
+  background:var(--card); border:1px solid var(--rule); border-radius:3px;
+  padding:1.05rem .95rem 1.15rem; display:flex; flex-direction:column; gap:.4rem;
+}
+.stage__cmd{font-family:var(--mono); font-size:.85rem; font-weight:600}
+.stage__agent{
+  font-family:var(--mono); font-size:.63rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted);
+}
+.stage__body{font-size:.9rem; color:var(--muted); flex:1}
+.gate{
+  margin-top:1.1rem; border:1px dashed var(--rule); border-radius:3px;
+  padding:1rem 1.1rem; display:flex; gap:.85rem; align-items:baseline; flex-wrap:wrap;
+}
+.gate__mark{font-family:var(--mono); font-weight:600; font-size:.85rem}
+.gate__body{flex:1; min-width:16rem; font-size:.93rem; color:var(--muted)}
+
+/* ── guards ───────────────────────────────────────────────────────── */
+.guards{display:grid; gap:.9rem; grid-template-columns:1fr}
+@media (min-width:52rem){ .guards{grid-template-columns:1fr 1fr} }
+.guard{
+  background:var(--card); border:1px solid var(--rule); border-radius:3px; overflow:hidden;
+}
+.guard__head{
+  padding:.85rem 1rem; border-bottom:1px solid var(--rule);
+  font-family:var(--mono); font-size:.8rem; font-weight:600;
+}
+.guard__body{padding:1rem}
+.guard__body p{margin:0 0 .8rem; font-size:.93rem; color:var(--muted)}
+.deny{
+  font-family:var(--mono); font-size:.74rem; line-height:1.7;
+  background:var(--paper); border:1px solid var(--rule); border-radius:2px;
+  padding:.7rem .8rem; overflow-x:auto; margin:0 0 .8rem;
+}
+.deny b{color:var(--flag); font-weight:600}
+
+/* ── closing ──────────────────────────────────────────────────────── */
+.foot{
+  border-top:1px solid var(--rule); padding:2.2rem 0 3.5rem;
+  display:flex; gap:1.4rem; flex-wrap:wrap; align-items:baseline;
+  font-family:var(--mono); font-size:.76rem; color:var(--muted);
+}
+.foot a{text-decoration:none; border-bottom:1px solid var(--rule)}
+.foot a:hover{color:var(--ink); border-bottom-color:var(--ink)}
+.foot__spacer{flex:1}
+
+/* ── entrance: one orchestrated moment ────────────────────────────── */
+@media (prefers-reduced-motion:no-preference){
+  .rise{animation:rise .7s cubic-bezier(.2,.7,.3,1) backwards}
+  .rise:nth-child(1){animation-delay:.02s}
+  .hero__title{animation:rise .8s cubic-bezier(.2,.7,.3,1) backwards .04s}
+  .hero__thesis{animation:rise .8s cubic-bezier(.2,.7,.3,1) backwards .13s}
+  .hero__sub{animation:rise .8s cubic-bezier(.2,.7,.3,1) backwards .19s}
+  .transform{animation:rise .8s cubic-bezier(.2,.7,.3,1) backwards .26s}
+  .install{animation:rise .8s cubic-bezier(.2,.7,.3,1) backwards .33s}
+  .redact::after{animation:wipe .5s cubic-bezier(.4,0,.2,1) backwards .62s}
+}
+@keyframes rise{from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:none}}
+@keyframes wipe{from{transform:scaleX(0)} to{transform:scaleX(1)}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="mast">
+    <span class="mast__name">cheatsheet-forge</span>
+    <span class="mast__tag">Claude Code plugin</span>
+    <span class="mast__tag">v0.2.0</span>
+    <span class="mast__spacer"></span>
+    <a class="mast__link" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge">GitHub →</a>
+  </header>
+
+  <main>
+
+    <section class="hero">
+      <p class="hero__eyebrow">Analyst → Writer → Reviewer → Publisher</p>
+      <h1 class="hero__title">Terminal&nbsp;history,<br><em>cited.</em></h1>
+      <p class="hero__thesis">Every command on the sheet traces back to the dump line it came from — or it does not ship.</p>
+      <p class="hero__sub">Point it at a folder of raw terminal output. It extracts the commands, scrubs the credentials, writes the cheat sheet, then audits its own work against the source before a human ever sees it.</p>
+
+      <div class="transform">
+        <figure class="panel">
+          <figcaption class="panel__head"><b>_sources/openshift/2026-08-21.txt</b> <span>raw · gitignored</span></figcaption>
+<pre>$ oc login https://api.<span class="redact">cluster-7f</span>.example.com:6443 \
+    --token=<span class="redact">&lt;TOKEN&gt;</span>
+<span class="dim">Logged in as "<span class="redact">&lt;USER&gt;</span>"</span>
+
+$ oc get pods -n <span class="redact">&lt;NAMESPACE&gt;</span> --field-selector \
+    status.phase=Failed</pre>
+        </figure>
+
+        <div class="arrow">
+          <span class="arrow__glyph">→</span>
+          <span>analyst</span>
+        </div>
+
+        <figure class="panel">
+          <figcaption class="panel__head"><b>openshift/openshift.md</b> <span>committed</span></figcaption>
+<pre>### Find failed pods in a namespace
+
+```bash
+oc get pods -n &lt;NAMESPACE&gt; \
+  --field-selector status.phase=Failed
+```
+<span class="pass">source_ref: 2026-08-21.txt:14</span>
+<span class="dim">origin: dump · destructive: no</span></pre>
+        </figure>
+
+        <p class="transform__note">Nothing is hidden under the bars. The placeholders are all that was ever written — the credential died at extraction.</p>
+      </div>
+
+      <div class="install">
+        <div class="cmd">
+          <code>/plugin marketplace add https://github.com/hismaili-awesome-ai/cheatsheet-forge.git</code>
+          <button class="cmd__copy" type="button" data-copy="/plugin marketplace add https://github.com/hismaili-awesome-ai/cheatsheet-forge.git">Copy</button>
+        </div>
+        <div class="cmd">
+          <code>/plugin install cheatsheet-forge@cheatsheet-forge</code>
+          <button class="cmd__copy" type="button" data-copy="/plugin install cheatsheet-forge@cheatsheet-forge">Copy</button>
+        </div>
+        <p class="install__note">Run both inside Claude Code, from any directory. Nothing to clone — Claude Code fetches the repository itself. Then run <code>/cheatsheet-forge:init</code> once in the repo that holds your sheets.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <span class="section__num">01</span>
+        <h2 class="section__title">Every rule here is scar tissue</h2>
+        <p class="section__lede">None of these controls were designed in advance. Each one exists because the failure beside it happened while building this repo's first OpenShift sheet, and had to be caught by hand.</p>
+      </div>
+
+      <div class="ledger">
+        <div class="entry">
+          <p class="entry__failure">The writer invented four commands that appeared in no dump.</p>
+          <p class="entry__control">No <code>source_ref</code>, no output. A command that cannot name the file and line it came from is dropped before it reaches the page.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/agents/writer.md#L3">agents/writer.md:3</a></p>
+        </div>
+        <div class="entry">
+          <p class="entry__failure">Ten of roughly sixty source commands were silently dropped.</p>
+          <p class="entry__control">The reviewer diffs source against document in both directions, so an omission is as loud as an invention.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/agents/reviewer.md#L12">agents/reviewer.md:12</a></p>
+        </div>
+        <div class="entry">
+          <p class="entry__failure">Handed a summary of the source, the reviewer found one defect out of nine.</p>
+          <p class="entry__control">The reviewer reads the raw dumps first and is told nothing about what the writer did or intended. It re-derives the truth instead of grading someone's account of it.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/commands/review.md#L12">commands/review.md:12</a></p>
+        </div>
+        <div class="entry">
+          <p class="entry__failure">Two commands that worked were "corrected" into commands that did not.</p>
+          <p class="entry__control">Flag, never fix. Commands in the dumps ran on real systems; documentation that disagrees with them raises a question for you, not an edit.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/agents/reviewer.md#L12">agents/reviewer.md:12</a></p>
+        </div>
+        <div class="entry">
+          <p class="entry__failure">A dump for one technology overwrote another technology's sheet.</p>
+          <p class="entry__control">A blocking hook resolves the leading binary of every command and refuses the write when it belongs to a different topic.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/hooks/guard.py#L191">hooks/guard.py:191</a></p>
+        </div>
+        <div class="entry">
+          <p class="entry__failure">Redaction was applied unevenly, and secrets survived into the sheet.</p>
+          <p class="entry__control">A deterministic scan runs on every governed write. Tokens, keys, home paths, private IPs and internal DNS never reach a file.
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/hooks/guard.py#L36">hooks/guard.py:36</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <span class="section__num">02</span>
+        <h2 class="section__title">Four agents, one gate</h2>
+        <p class="section__lede">Each stage hands the next a narrower artifact. The reviewer is the only one that goes back to the raw source, and the pipeline stops dead in front of you before anything is published.</p>
+      </div>
+
+      <div class="pipe">
+        <div class="stage">
+          <span class="stage__cmd">/analyze</span>
+          <span class="stage__agent">analyst · reads raw</span>
+          <p class="stage__body">Extracts commands into a structured inventory, deduplicated and parameterised. The only agent that touches unsanitised source, so every credential dies here.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">/write</span>
+          <span class="stage__agent">writer · never reads raw</span>
+          <p class="stage__body">Turns the inventory into the sheet. Works only from what the analyst extracted, and emits nothing that lacks a source reference.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">/review</span>
+          <span class="stage__agent">reviewer · reads raw again</span>
+          <p class="stage__body">Audits the sheet against the dumps from scratch. Checks provenance both ways, and judges whether destructive commands carry honest warnings.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">/publish</span>
+          <span class="stage__agent">publisher · local only</span>
+          <p class="stage__body">Builds the docs site and serves a preview. It has no ability to push, by construction — the last step out the door stays yours.</p>
+        </div>
+      </div>
+
+      <div class="gate">
+        <span class="gate__mark">▣ human gate</span>
+        <p class="gate__body"><code>/forge &lt;topic&gt;</code> runs the first three in order and then stops, whatever the verdict. A blocked review is never routed around: it points back at the writing or the extraction, and never at publishing.
+          <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/commands/forge.md#L1">commands/forge.md</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <span class="section__num">03</span>
+        <h2 class="section__title">Two rules a model cannot talk its way past</h2>
+        <p class="section__lede">Everything else in the pipeline is an instruction, and an instruction is something a model can reason around. These two are a <code>PreToolUse</code> hook: the write is refused by a Python script before the tool runs.</p>
+      </div>
+
+      <div class="guards">
+        <div class="guard">
+          <div class="guard__head">Secrets and identifiers</div>
+          <div class="guard__body">
+            <pre class="deny"><b>cheatsheet-forge guard blocked this write.</b>
+
+SECRET / PII LEAK — blocking:
+  line 12: OpenShift session token
+  line 30: Private IP address → 10.11.12.13
+     (use &lt;HOST_IP&gt;)</pre>
+            <p>Tokens, JWTs, private keys, cloud access keys, hardcoded passwords, absolute home directories, private IP ranges and internal cluster DNS. Client and employer names go in your repo's own config, never in the published plugin.</p>
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/hooks/guard.py#L239">hooks/guard.py:239</a>
+          </div>
+        </div>
+
+        <div class="guard">
+          <div class="guard__head">Topic boundaries</div>
+          <div class="guard__body">
+            <pre class="deny"><b>cheatsheet-forge guard blocked this write.</b>
+
+TOPIC BOUNDARY — blocking:
+  `gem` belongs to 'ruby', not 'openshift':
+  gem install bundler</pre>
+            <p>Which binary belongs to which technology is declared in a tech profile, so teaching the guard a new stack is one YAML file and never an edit to blocking code. A binary owned by two stacks — <code>pod</code> is CocoaPods and a Ruby gem — simply appears in both.</p>
+            <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/tech-profiles">tech-profiles/</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="gate">
+        <span class="gate__mark">inert elsewhere</span>
+        <p class="gate__body">The hook runs on every write in every project you open, and returns immediately unless the file sits inside a repo you have explicitly initialised. Your unrelated codebases are never scanned and never blocked.
+          <a class="ref" href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/blob/main/tests/test_guard.py#L175">tests/test_guard.py:175</a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <span class="section__num">04</span>
+        <h2 class="section__title">Bring your own repository</h2>
+        <p class="section__lede">The plugin holds no knowledge of any particular repo. Where sources live, where the site builds, and whether sheets are <code>&lt;topic&gt;/&lt;topic&gt;.md</code> or <code>&lt;topic&gt;.md</code> all come from a config file that stays in your repo, under your control.</p>
+      </div>
+
+      <div class="pipe">
+        <div class="stage">
+          <span class="stage__cmd">1 · install</span>
+          <span class="stage__agent">once per machine</span>
+          <p class="stage__body">Add the marketplace and install the plugin. Claude Code clones and caches it for you; you never clone anything yourself.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">2 · init</span>
+          <span class="stage__agent">once per repo</span>
+          <p class="stage__body"><code>/cheatsheet-forge:init</code> inspects what is already on disk, infers your layout, and gitignores the raw dumps. Existing content is read, never modified.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">3 · drop dumps</span>
+          <span class="stage__agent">per topic</span>
+          <p class="stage__body">Paste terminal output into the sources folder. It is gitignored and exempt from the guard, so unsanitised text is safe there — and only there.</p>
+        </div>
+        <div class="stage">
+          <span class="stage__cmd">4 · forge</span>
+          <span class="stage__agent">per topic</span>
+          <p class="stage__body"><code>/forge &lt;topic&gt;</code> and read the verdict. Unknown technologies work without a profile: the reviewer finds the official docs and reports at reduced confidence.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span>MIT</span>
+    <span>Python 3.8+ · no dependencies required</span>
+    <span class="foot__spacer"></span>
+    <a href="https://github.com/hismaili-awesome-ai/cheatsheet-forge">Source</a>
+    <a href="https://github.com/hismaili-awesome-ai/cheatsheet-forge#readme">Documentation</a>
+    <a href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/issues">Issues</a>
+  </footer>
+
+</div>
+
+<script>
+document.querySelectorAll('.cmd__copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var text = btn.getAttribute('data-copy');
+    var done = function(){
+      var prev = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(function(){ btn.textContent = prev; }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
+  });
+});
+</script>
+
+</body>
+</html>
