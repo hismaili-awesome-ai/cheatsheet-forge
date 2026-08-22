@@ -1,0 +1,38 @@
+name: Bug
+description: Something got through, or something was wrongly blocked
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste a real secret.** If the guard missed a credential, describe its
+        *shape* (`sha256~` prefix, 40 hex chars) or use an obviously fake stand-in.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options:
+        - A secret reached a file the guard should have blocked
+        - A legitimate write was blocked and should not have been
+        - A command was invented and survived review
+        - A command in the source was dropped from the sheet
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: What you expected, and what you got
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest input that reproduces it
+      description: A few sanitised dump lines is usually enough.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      placeholder: "0.2.0"

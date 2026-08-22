@@ -1,0 +1,28 @@
+name: Question
+description: Ask how to do something with cheatsheet-forge
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Answers here become searchable for the next person with the same problem.
+        No question is too small.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      placeholder: I have a repo with hand-written sheets already and I want to...
+    validations:
+      required: true
+  - type: input
+    id: layout
+    attributes:
+      label: Your layout
+      description: From `.cheatsheet-repo.yml`, if you have run /cheatsheet-forge:init
+      placeholder: nested (<topic>/<topic>.md) or flat (<topic>.md)
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you have tried
+      description: Commands run and what came back. Scrub any tokens before pasting.
+      render: shell

@@ -1,0 +1,39 @@
+name: Tech profile request
+description: Teach the guard a technology it does not know yet
+labels: [tech-profile]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Unknown technologies already work without a profile — the reviewer finds the
+        official docs and reports at reduced confidence. A profile makes the next
+        review sharper and teaches the boundary check which binaries belong to it.
+  - type: input
+    id: tech
+    attributes:
+      label: Technology
+      placeholder: terraform
+    validations:
+      required: true
+  - type: input
+    id: binaries
+    attributes:
+      label: Binaries it owns
+      placeholder: terraform, tofu
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: Authoritative documentation URL
+      placeholder: https://developer.hashicorp.com/terraform/cli
+  - type: textarea
+    id: destructive
+    attributes:
+      label: Destructive commands and what they cost
+      placeholder: |
+        terraform destroy — tears down every managed resource in the workspace
+  - type: textarea
+    id: footguns
+    attributes:
+      label: Footguns worth warning about
