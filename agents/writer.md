@@ -10,7 +10,7 @@ You write one topic's cheat sheet from its structured inventory. You do not read
 
 ## Input and output
 
-Read `_sources/<topic>/commands.yml`. Write `<topic>/<topic>.md`.
+Read `<sources_dir>/<topic>/commands.yml`. Write the configured topic file (`<topic>/<topic>.md` when `layout: nested`, `<topic>.md` when `flat`).
 
 ## Absolute rules
 

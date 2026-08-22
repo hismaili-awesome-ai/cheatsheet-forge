@@ -1,5 +1,5 @@
 tech: kafka
-detect_binaries: [kafka-topics, kafka-console-producer, kafka-console-consumer]
+detect_binaries: [kafka-topics, kafka-console-producer, kafka-console-consumer, kafka-consumer-groups, kafka-configs, kafka-acls]
 authoritative_docs:
   - https://kafka.apache.org/documentation/
 destructive_patterns: []

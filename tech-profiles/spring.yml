@@ -1,5 +1,5 @@
 tech: spring
-detect_binaries: [mvn, gradle, java, spring]
+detect_binaries: [mvn, gradle, java, spring, mvnw, gradlew, ./mvnw, ./gradlew]
 authoritative_docs:
   - https://docs.spring.io/spring-boot/docs/current/reference/html/
 destructive_patterns: []

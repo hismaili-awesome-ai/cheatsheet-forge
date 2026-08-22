@@ -3,6 +3,8 @@
 Turns raw terminal dumps into provenance-checked cheat sheets, then into a docs site.
 
 ```
+/init                           ── once per repo, mandatory ──▶ .cheatsheet-repo.yml
+
 _sources/<topic>/*.txt          (gitignored — raw, may contain secrets)
         │
         ├─ /analyze  → analyst   → _sources/<topic>/commands.yml   (structured, scrubbed)
@@ -14,6 +16,77 @@ _sources/<topic>/*.txt          (gitignored — raw, may contain secrets)
 /forge <topic>  runs analyze → write → review, then stops at the gate.
 /cleanup <topic> archives dumps once published (reversible; --purge is not).
 ```
+
+Paths above are the defaults. Every one of them — the sources directory, the site
+directory, and whether topic files are `<topic>/<topic>.md` or `<topic>.md` — comes
+from the repo's own `.cheatsheet-repo.yml`. The plugin holds no knowledge of any
+particular repository.
+
+## Install
+
+In Claude Code, from any directory:
+
+```
+/plugin marketplace add https://github.com/hismaili-awesome-ai/cheatsheet-forge.git
+/plugin install cheatsheet-forge@cheatsheet-forge
+```
+
+You do not clone anything: Claude Code fetches the repository itself and copies the
+plugin into `~/.claude/plugins/cache/`. The `owner/repo` shorthand works too, but it
+clones over SSH by default, so the full HTTPS URL above is the form that needs no
+GitHub SSH key.
+
+Then, once per cheat-sheet repository:
+
+```
+cd ~/my-cheat-sheets
+/cheatsheet-forge:init
+```
+
+To try it against a local checkout instead of the published repo, point the
+marketplace at the clone — `/plugin marketplace add ./cheatsheet-forge` — and install
+the same way.
+
+Requirements: Python 3.8+ on `PATH` as `python3`. PyYAML is used when available and a
+built-in parser stands in when it is not, so nothing needs installing. The publisher
+additionally needs Node.js, but only when you build the site.
+
+`/init` is **mandatory and runs once**. It inspects what is already on disk, writes
+`.cheatsheet-repo.yml`, creates the sources directory, appends the gitignore entries
+that keep raw dumps out of git, and records `CHEATSHEET_REPO` in
+`.claude/settings.local.json` so hooks and scripts resolve the same root whatever
+directory they are invoked from. Every other command exits 2 until it has run — there
+is no way to tell a topic file from any other markdown without it, and a guard with no
+layout would have to choose between blocking everything and blocking nothing.
+
+The plugin does not have to live inside the repo it operates on, and one installation
+serves any number of cheat-sheet repos.
+
+Installing it is also inert everywhere else. The write guard is a `PreToolUse` hook, so
+it runs on every `Write`/`Edit` in every project you open — and it returns immediately
+unless the file is inside a repo that has been through `/init`. An unconfigured repo,
+or any path outside the configured one, is never scanned and never blocked.
+
+## Configuration
+
+`.cheatsheet-repo.yml` is yours and belongs in your repo, not in the plugin:
+
+```yaml
+sources_dir: _sources        # raw dumps (gitignored)
+site_dir: site               # generated docs site
+layout: nested               # nested -> <topic>/<topic>.md ; flat -> <topic>.md
+topics: [openshift, vault]   # empty -> discovered from sources_dir
+aliases: {legacy-dir: vault} # directory name -> canonical topic
+redact:
+  named_entities: []         # client/employer names the guard blocks on
+  extra_patterns: []
+guard:
+  unknown_topic: warn        # warn | deny | allow
+```
+
+`redact.named_entities` is the reason this file exists separately from the plugin.
+Employer and client names are identifying, must be blocked, and must never be baked
+into a published plugin. They live here, in a repo you control.
 
 Each command ends by naming the next one to run, keyed to its outcome. A BLOCKED
 review never suggests publishing — it points back at `/write` or `/analyze`
@@ -53,7 +126,7 @@ example, not an audit log; the unmodified truth stays in the dump that `source_r
 The analyst must pass `scripts/lint-commands.py` before reporting done:
 
 ```bash
-python3 cheatsheet-forge/scripts/lint-commands.py _sources/<topic>/commands.yml
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lint-commands.py" <topic>
 ```
 
 It validates schema, resolves every `source_ref` to a real file and line, and scans both
@@ -83,16 +156,16 @@ pointing into the `.md`), and only then may the writer regenerate. Non-command c
 hand-written prose, tables — cannot be represented in `commands.yml`, so the analyst reports
 what will be lost rather than dropping it silently.
 
-The manifest lives in gitignored `_sources/`, so a fresh clone reads `virgin` and errs toward
-preserving content rather than destroying it.
+The manifest lives in the gitignored sources directory, so a fresh clone reads `virgin`
+and errs toward preserving content rather than destroying it.
 
 ## Cleanup
 
 `/cleanup <topic>` archives dumps to `_sources/<topic>/.archive/<timestamp>/` and deletes
 `commands.yml` (regenerable via `/analyze`). Reversible with `--restore`.
 
-`--purge` permanently deletes dumps and is never taken on an agent's initiative — `_sources/`
-is gitignored and local-only, so there is no git history to recover from.
+`--purge` permanently deletes dumps and is never taken on an agent's initiative — the
+sources directory is gitignored and local-only, so there is no git history to recover from.
 
 Cleanup is a separate user-run command, deliberately not part of the reviewer: the reviewer
 runs *before* the human gate, and a BLOCKED verdict is precisely when the raw dumps are most
@@ -102,6 +175,7 @@ needed to act on it.
 
 | Rule | Enforced by | Blocking |
 |---|---|---|
+| Repo is initialised before anything runs | `forgeconfig.require()` | yes |
 | No secrets, PII, home paths, private IPs, internal DNS | `hooks/guard.py` | yes |
 | Commands stay in their own topic file | `hooks/guard.py` | yes |
 | Every command traces to a dump line | reviewer | yes |
@@ -123,15 +197,50 @@ The reviewer is the one place not to economise — it is the proven failure poin
 
 ## Adding a technology
 
-Drop dumps in `_sources/<topic>/` and run `/forge <topic>`. Unknown technologies work
-without a profile: the reviewer finds the official docs, verifies against them, and reports
-at reduced confidence plus a proposed profile. Add it to `tech-profiles/<tech>.yml` to make
-the next review sharper.
+Drop dumps in `<sources_dir>/<topic>/` and run `/forge <topic>`. Unknown technologies
+work without a profile: the reviewer finds the official docs, verifies against them, and
+reports at reduced confidence plus a proposed profile.
 
-## Testing the guard
+To make the next review sharper — and to teach the guard which topic a binary belongs to —
+add `tech-profiles/<tech>.yml`:
+
+```yaml
+tech: terraform
+detect_binaries: [terraform, tofu]      # the guard's boundary check reads this
+subcommand_owners: {}                    # for tools whose subcommand picks the topic
+authoritative_docs: [https://developer.hashicorp.com/terraform/cli]
+destructive_patterns:
+  - pattern: 'terraform destroy'
+    consequence: Tears down every managed resource in the workspace.
+secret_patterns: ['TF_VAR_.*(secret|token)', '\.tfstate']
+footguns: []
+```
+
+Binary ownership lives in these profiles rather than in the guard, so adding a technology
+is one file and never an edit to a blocking hook. A binary owned by two technologies —
+`pod` is CocoaPods for mobile and a gem for Ruby — simply appears in both profiles, and
+the guard objects only when the topic is in neither.
+
+`secret_patterns` is deliberately **not** a guard deny-list. These are broad locators that
+match legitimate documented commands as often as leaks (`system:serviceaccount:`,
+`unseal`); the reviewer consumes them and judges what it finds. The guard blocks only on
+shapes that are credentials by construction.
+
+## Testing
 
 ```bash
-python3 -c "import json;print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'openshift/openshift.md','content':open('FILE').read()}}))" \
-  | python3 cheatsheet-forge/hooks/guard.py
+python3 tests/test_guard.py
+```
+
+Fixture tests for the guard and the config layer: secret shapes, topic boundaries, alias
+resolution, both layouts, the `unknown_topic` policies, and the dependency-free YAML
+fallback. The guard is the only non-model-mediated control in the pipeline, so a silent
+regression there is invisible until something leaks.
+
+To check a single file by hand:
+
+```bash
+python3 -c "import json,sys;print(json.dumps({'tool_name':'Write','tool_input':{'file_path':sys.argv[1],'content':open(sys.argv[1]).read()}}))" FILE \
+  | python3 "${CLAUDE_PLUGIN_ROOT}/hooks/guard.py"
 ```
 Output is empty when allowed, and a JSON deny payload when blocked.

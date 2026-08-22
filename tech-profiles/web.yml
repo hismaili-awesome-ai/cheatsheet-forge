@@ -1,0 +1,26 @@
+tech: web
+detect_binaries: [npm, npx, yarn, pnpm, node, vite, next, tsc, deno, bun]
+subcommand_owners:
+  expo: {android: mobile, ios: mobile, web: web}
+authoritative_docs:
+  - https://docs.npmjs.com/cli/
+  - https://nodejs.org/docs/latest/api/
+  - https://yarnpkg.com/cli
+  - https://pnpm.io/cli/
+destructive_patterns:
+  - pattern: 'rm -rf node_modules'
+    consequence: Discards the installed tree; everything must be re-fetched from the registry.
+  - pattern: 'npm cache clean --force'
+    consequence: Empties the shared cache for every project on the machine, not just this one.
+  - pattern: 'npm publish'
+    consequence: Pushes to the public registry; a published version number can never be reused.
+  - pattern: 'npm install -g|npm i -g'
+    consequence: Mutates the global prefix, affecting every project on the machine.
+secret_patterns: ['_authToken', 'NPM_TOKEN', '\.npmrc', 'NODE_AUTH_TOKEN', 'VITE_.*(KEY|SECRET|TOKEN)']
+footguns:
+  - '`npm ci` requires a lockfile and deletes node_modules first; `npm install` mutates the lockfile. They are not interchangeable.'
+  - Scripts run via `npm run` see a modified PATH that includes node_modules/.bin; the same command fails in a bare shell.
+  - '`NODE_ENV=production` makes npm skip devDependencies, which breaks build steps that need them.'
+version_sensitive:
+  - npm 7+ installs peer dependencies automatically; earlier versions do not
+  - Yarn 1 and Yarn Berry have incompatible CLIs

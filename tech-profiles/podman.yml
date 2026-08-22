@@ -1,5 +1,5 @@
 tech: podman
-detect_binaries: [podman, docker, buildah, skopeo]
+detect_binaries: [podman, docker, buildah, skopeo, podman-compose, docker-compose]
 authoritative_docs:
   - https://docs.podman.io/en/latest/
 destructive_patterns: []

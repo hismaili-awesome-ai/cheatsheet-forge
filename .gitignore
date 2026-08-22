@@ -1,2 +1,3 @@
-# -- Ignore all files in the claude-plugin directory
-.claude-plugin
+__pycache__/
+*.py[cod]
+.DS_Store

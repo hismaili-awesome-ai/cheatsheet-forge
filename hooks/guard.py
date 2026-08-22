@@ -8,19 +8,27 @@ Fires on PreToolUse for Write/Edit/MultiEdit. Two blocking checks:
 
 Neither check is model-mediated. An agent cannot reason its way past them.
 Placeholders (<FOO>, [REDACTED], $VAR, ${VAR}) are always allowed.
+
+Nothing here is specific to any repository. Layout, topics, aliases and the
+extra strings a given repo treats as identifying come from its
+.cheatsheet-repo.yml; binary ownership comes from tech-profiles/. Adding a
+technology is a YAML file, never an edit to this guard.
+
+The secret scan runs on every governed write, whether or not the topic is
+recognised — an unknown topic must never mean an unscanned file.
 """
 import json
+import pathlib
 import re
 import sys
-from pathlib import Path
 
-# --------------------------------------------------------------------------
-# Which files this guard governs
-# --------------------------------------------------------------------------
-TOPIC_FILE = re.compile(r"(?:^|/)([A-Za-z0-9_-]+)/\1?[A-Za-z0-9_-]*\.md$")
-GOVERNED_DIRS = ("openshift", "linux", "podman", "git", "kafka",
-                 "Haschicorp-vault", "vault", "spring", "java", "ruby",
-                 "web", "mobile", "site")
+# forgeconfig lives in scripts/. A blocking hook must not die on an import, so
+# every failure degrades to built-in defaults rather than crashing the write.
+try:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+    import forgeconfig as fc
+except Exception:                                    # pragma: no cover
+    fc = None
 
 # --------------------------------------------------------------------------
 # 1. Secret patterns  (name, regex, hint)
@@ -53,28 +61,6 @@ SECRETS = [
 # Any line carrying one of these is considered already sanitised.
 SAFE_MARKERS = re.compile(r"<[A-Z_][A-Z0-9_]*>|\[REDACTED[^\]]*\]|\$\{?[A-Z_]+\}?|example\.com|<USER>")
 
-# --------------------------------------------------------------------------
-# 2. Topic boundary  (binary -> the topic it belongs to)
-# --------------------------------------------------------------------------
-BINARY_TOPIC = {
-    "oc": "openshift", "kubectl": "openshift", "argocd": "openshift",
-    "podman": "podman", "podman-compose": "podman", "buildah": "podman", "skopeo": "podman",
-    "docker": "podman", "docker-compose": "podman",
-    "vault": "vault",
-    "git": "git",
-    "systemctl": "linux", "journalctl": "linux", "yum": "linux", "dnf": "linux",
-    "apt": "linux", "apt-get": "linux", "lsof": "linux", "fuser": "linux", "useradd": "linux",
-    "mvn": "spring", "gradle": "spring", "./mvnw": "spring", "./gradlew": "spring",
-    "npm": "web", "npx": "web", "yarn": "web", "pnpm": "web", "node": "web",
-    "flutter": "mobile", "pod": "mobile", "xcodebuild": "mobile",
-    "gem": "ruby", "bundle": "ruby", "rails": "ruby", "rbenv": "ruby", "pod": "ruby",
-    "kafka-topics": "kafka", "kafka-console-producer": "kafka", "kafka-console-consumer": "kafka",
-}
-# `expo` doesn't own a single topic: `expo build:android`/`build:ios` are native
-# mobile builds, but `expo build:web`/`start`/`export:web` etc. target the web
-# bundle. Resolved per-subcommand in check_boundary(), not via BINARY_TOPIC.
-EXPO_SUBCOMMAND_TOPIC = {"android": "mobile", "ios": "mobile", "web": "web"}
-
 # Binaries that are legitimately universal - never a boundary violation.
 UNIVERSAL = {"curl", "echo", "cat", "grep", "sed", "awk", "export", "cd", "ls", "chmod",
              "chown", "mkdir", "rm", "cp", "mv", "ssh", "scp", "openssl", "base64", "jq",
@@ -86,38 +72,99 @@ UNIVERSAL = {"curl", "echo", "cat", "grep", "sed", "awk", "export", "cd", "ls", 
 WRAPPERS = {"sudo", "env", "time", "nohup", "nice", "xargs", "command", "exec",
             "doas", "stdbuf", "timeout", "watch"}
 
-# Topic directory aliases -> canonical topic key
-TOPIC_ALIAS = {"haschicorp-vault": "vault", "hashicorp-vault": "vault"}
+
+# --------------------------------------------------------------------------
+# Repo-derived configuration
+# --------------------------------------------------------------------------
+def _config():
+    return fc.load() if fc else None
 
 
-def topic_of(path: str):
-    parts = Path(path).parts
-    for p in parts:
-        key = TOPIC_ALIAS.get(p.lower(), p.lower())
-        if key in set(BINARY_TOPIC.values()) | {"openshift", "linux", "podman", "git", "kafka", "vault"}:
-            return key
+def extra_secret_patterns(cfg):
+    """Repo-specific identifiers: employer and client names, internal product
+    codenames. These live in the repo's own config precisely so they are never
+    baked into a plugin that gets published."""
+    out = []
+    if not cfg:
+        return out
+    for name in cfg.named_entities():
+        # Case-insensitive: a name is identifying however it is capitalised.
+        out.append(("Client/employer identifier", "(?i)" + re.escape(name),
+                    "use a generic placeholder"))
+    for pat in cfg.extra_patterns():
+        out.append(("Repo-configured secret pattern", pat, None))
+    return out
+
+
+# NOTE: tech-profiles carry a `secret_patterns` list. It is deliberately NOT
+# wired in here. Those patterns are broad locators ("system:serviceaccount:",
+# "unseal", "role-id") meant to tell the reviewer where to look; as deny rules
+# they block legitimate documented commands. The reviewer consumes them; the
+# guard blocks only on shapes that are credentials by construction.
+
+
+def topic_of(path, cfg):
+    """The topic a governed file belongs to, or None.
+
+    Matches the configured layout rather than guessing: nested repos keep
+    <topic>/<topic>.md, flat repos keep <topic>.md.
+    """
+    if not cfg:
+        return None
+    p = pathlib.Path(path)
+    parts = [x.lower() for x in p.parts]
+    known = cfg.known_topics()
+    flat = cfg.data.get("layout") == "flat"
+    if flat:
+        cand = cfg.canonical(p.stem)
+        return cand if cand in known else None
+    # nested: the directory name owns the file
+    for part in reversed(parts[:-1]):
+        cand = cfg.canonical(part)
+        if cand in known:
+            return cand
     return None
 
 
-def bash_blocks(text: str):
-    """Yield lines inside ```bash / ```sh fenced blocks."""
-    inside = False
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("```"):
-            inside = s.startswith("```bash") or s.startswith("```sh") or s.startswith("```shell")
-            continue
-        if inside:
-            yield line
+def governed(path, cfg):
+    """Is this write inside the cheat-sheet repo and not a raw dump?
+
+    Returns (bool, reason). Raw dumps are expected to contain secrets and are
+    gitignored; everything else the pipeline writes gets scanned.
+    """
+    if not path.endswith((".md", ".mdx", ".yml", ".yaml")):
+        return False, "not a document"
+    p = pathlib.Path(path)
+    if not cfg:
+        return False, "unconfigured"
+    src_name = cfg.data.get("sources_dir", "_sources")
+    if src_name in p.parts:
+        return False, "raw dump"
+    try:
+        p.resolve().relative_to(cfg.root)
+    except ValueError:
+        # Outside the configured repo. This is the common case once the plugin
+        # is installed globally: the hook fires on every write in every project,
+        # and a file belonging to some unrelated codebase must pass through
+        # untouched. Relative paths resolve against the cwd, which for a hook is
+        # the project being worked in -- so this correctly excludes them too.
+        return False, "outside repo"
+    return True, ""
 
 
-def check_secrets(text: str):
+# --------------------------------------------------------------------------
+# Checks
+# --------------------------------------------------------------------------
+def check_secrets(text, patterns):
     hits = []
     for lineno, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith("#"):
             continue
-        for name, pattern, hint in SECRETS:
-            m = re.search(pattern, line)
+        for name, pattern, hint in patterns:
+            try:
+                m = re.search(pattern, line)
+            except re.error:
+                continue
             if not m:
                 continue
             if SAFE_MARKERS.search(m.group(0)):
@@ -129,9 +176,23 @@ def check_secrets(text: str):
     return hits
 
 
-def check_boundary(text: str, topic: str):
-    if not topic:
+def bash_blocks(text):
+    """Yield lines inside ```bash / ```sh fenced blocks."""
+    inside = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            inside = s.startswith("```bash") or s.startswith("```sh") or s.startswith("```shell")
+            continue
+        if inside:
+            yield line
+
+
+def check_boundary(text, topic):
+    if not topic or not fc:
         return []
+    owners_map = fc.binary_owners()
+    subcmd_map = fc.subcommand_owners()
     hits = []
     for line in bash_blocks(text):
         stripped = line.strip()
@@ -149,28 +210,64 @@ def check_boundary(text: str, topic: str):
         if first in UNIVERSAL:
             continue
 
-        # `expo`, bare or via `npx`, is resolved per-subcommand rather than a
-        # fixed owner: `build:android`/`build:ios` are native mobile builds,
-        # `build:web` and friends target the web bundle. See EXPO_SUBCOMMAND_TOPIC.
-        expo_idx = None
-        if first == "expo":
-            expo_idx = idx
-        elif first == "npx" and idx + 1 < len(tokens) and tokens[idx + 1].lstrip("$(").strip("`") == "expo":
-            expo_idx = idx + 1
-        if expo_idx is not None:
-            sub = tokens[expo_idx + 1].lower() if expo_idx + 1 < len(tokens) else ""
-            owners = {t for kw, t in EXPO_SUBCOMMAND_TOPIC.items() if kw in sub}
+        # Some tools do not own a single topic: the subcommand decides. `expo
+        # build:android` is a native mobile build, `expo build:web` targets the
+        # web bundle. Declared per profile as subcommand_owners.
+        sub_idx = None
+        if first in subcmd_map:
+            sub_idx = idx
+        elif idx + 1 < len(tokens):
+            nxt = tokens[idx + 1].lstrip("$(").strip("`")
+            if nxt in subcmd_map and first in ("npx", "yarn", "pnpm", "bunx"):
+                first, sub_idx = nxt, idx + 1
+        if sub_idx is not None:
+            sub = tokens[sub_idx + 1].lower() if sub_idx + 1 < len(tokens) else ""
+            owners = {t for kw, t in subcmd_map[first].items() if kw in sub}
             if owners and topic not in owners:
-                shown = "/".join(sorted(owners))
-                hits.append(f"  `expo {sub}` belongs to '{shown}', not '{topic}': {stripped[:70]}")
+                hits.append(f"  `{first} {sub}` belongs to '{'/'.join(sorted(owners))}', "
+                            f"not '{topic}': {stripped[:70]}")
             continue
 
-        owner = BINARY_TOPIC.get(first)
-        owners = owner if isinstance(owner, (set, frozenset)) else ({owner} if owner else set())
+        owners = owners_map.get(first, set())
         if owners and topic not in owners:
-            shown = "/".join(sorted(owners))
-            hits.append(f"  `{first}` belongs to '{shown}', not '{topic}': {stripped[:70]}")
+            hits.append(f"  `{first}` belongs to '{'/'.join(sorted(owners))}', "
+                        f"not '{topic}': {stripped[:70]}")
     return hits
+
+
+# --------------------------------------------------------------------------
+def evaluate(path, content, cfg):
+    """Return (decision, reason). decision is 'allow' or 'deny'."""
+    ok, _why = governed(path, cfg)
+    if not ok:
+        return "allow", ""
+
+    topic = topic_of(path, cfg)
+    problems = []
+
+    patterns = SECRETS + extra_secret_patterns(cfg)
+    sec = check_secrets(content, patterns)
+    if sec:
+        problems.append("SECRET / PII LEAK — blocking:\n" + "\n".join(sec[:12]))
+
+    bnd = check_boundary(content, topic)
+    if bnd:
+        problems.append("TOPIC BOUNDARY — blocking:\n" + "\n".join(bnd[:12]))
+
+    if topic is None and cfg and cfg.unknown_topic_policy() == "deny":
+        problems.append(
+            "UNKNOWN TOPIC — blocking:\n"
+            f"  '{path}' does not match a topic declared in .cheatsheet-repo.yml.\n"
+            "  Add it to `topics:` (or set guard.unknown_topic: warn) before writing.")
+
+    if not problems:
+        return "allow", ""
+
+    src = cfg.data.get("sources_dir", "_sources") if cfg else "_sources"
+    return "deny", ("cheatsheet-forge guard blocked this write.\n\n"
+                    + "\n\n".join(problems)
+                    + "\n\nParameterise the value (<PLACEHOLDER>) or move the command to the "
+                      f"correct topic file. Raw dumps belong in {src}/ (gitignored).")
 
 
 def main():
@@ -179,17 +276,12 @@ def main():
     except Exception:
         sys.exit(0)
 
-    tool = payload.get("tool_name", "")
-    if tool not in ("Write", "Edit", "MultiEdit"):
+    if payload.get("tool_name", "") not in ("Write", "Edit", "MultiEdit"):
         sys.exit(0)
 
     ti = payload.get("tool_input", {}) or {}
     path = ti.get("file_path", "") or ""
-    if not path.endswith((".md", ".mdx", ".yml", ".yaml")):
-        sys.exit(0)
-    if "_sources/" in path:          # raw dumps are expected to contain secrets
-        sys.exit(0)
-    if not any(d in path for d in GOVERNED_DIRS):
+    if not path:
         sys.exit(0)
 
     content = ti.get("content") or ti.get("new_string") or ""
@@ -198,26 +290,22 @@ def main():
     if not content:
         sys.exit(0)
 
-    problems = []
-    sec = check_secrets(content)
-    if sec:
-        problems.append("SECRET / PII LEAK — blocking:\n" + "\n".join(sec[:12]))
-    bnd = check_boundary(content, topic_of(path))
-    if bnd:
-        problems.append("TOPIC BOUNDARY — blocking:\n" + "\n".join(bnd[:12]))
+    try:
+        cfg = _config()
+    except Exception:
+        sys.exit(0)
+    # An unconfigured repo has no layout to reason about. /init is mandatory;
+    # the commands refuse before any agent gets this far.
+    if cfg is None or not cfg.configured:
+        sys.exit(0)
 
-    if problems:
-        reason = ("cheatsheet-forge guard blocked this write.\n\n"
-                  + "\n\n".join(problems)
-                  + "\n\nParameterise the value (<PLACEHOLDER>) or move the command to the "
-                    "correct topic file. Raw dumps belong in _sources/ (gitignored).")
+    decision, reason = evaluate(path, content, cfg)
+    if decision == "deny":
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": reason,
         }}))
-        sys.exit(0)
-
     sys.exit(0)
 
 

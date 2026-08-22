@@ -1,0 +1,26 @@
+tech: mobile
+detect_binaries: [flutter, xcodebuild, xcrun, adb, gradlew, fastlane, eas, pod]
+subcommand_owners:
+  expo: {android: mobile, ios: mobile, web: web}
+authoritative_docs:
+  - https://docs.expo.dev/
+  - https://docs.flutter.dev/reference/flutter-cli
+  - https://developer.apple.com/documentation/xcode
+  - https://developer.android.com/studio/command-line
+destructive_patterns:
+  - pattern: 'flutter clean'
+    consequence: Deletes build/ and .dart_tool/; the next build is a full rebuild from scratch.
+  - pattern: 'xcrun simctl erase'
+    consequence: Wipes the simulator device, including installed apps and their data.
+  - pattern: 'adb uninstall|adb shell pm clear'
+    consequence: Removes the app or clears its data on the connected device; local state is gone.
+  - pattern: 'pod deintegrate'
+    consequence: Strips CocoaPods from the Xcode project; the workspace must be regenerated.
+secret_patterns: ['\.p12', '\.mobileprovision', 'keystore', 'KEY_PASSWORD', 'ASC_API_KEY', 'google-services\.json', 'GoogleService-Info\.plist']
+footguns:
+  - Expo `build:android`/`build:ios` produce native binaries; `build:web` targets the web bundle and belongs to a different topic.
+  - CocoaPods `pod` collides with the Ruby gem of the same name; both are legitimate and the topic decides which is meant.
+  - Simulator and device builds differ in architecture; a build that runs in the simulator may not install on hardware.
+version_sensitive:
+  - Expo classic builds were replaced by EAS Build; `expo build:*` is deprecated in newer SDKs
+  - Xcode command-line syntax changes across major releases

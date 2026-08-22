@@ -3,17 +3,19 @@ description: Extract a structured, provenance-tagged commands.yml from a topic's
 argument-hint: <topic> [paste a dump inline, optional]
 ---
 
+**Requires an initialised repository.** If `.cheatsheet-repo.yml` is absent and `$CHEATSHEET_REPO` is unset, stop and tell the user to run `/cheatsheet-forge:init` first — the scripts exit 2 with that message anyway, and every path below is resolved from that config, not assumed.
+
 Arguments: `$ARGUMENTS`
 
 **Parse them first.** The first whitespace-delimited token is the topic. Everything after it — if anything — is a dump the user pasted inline. Never treat the whole argument string as a path; a pasted dump contains newlines and backticks and will produce a nonsense path if you do.
 
-If an inline dump is present, write it verbatim to `_sources/<topic>/inline-$(date +%Y-%m-%d-%H%M).txt` before doing anything else. `_sources/` is gitignored and exempt from the write guard, so raw unsanitised content is safe there — and only there.
+If an inline dump is present, write it verbatim to `<sources_dir>/<topic>/inline-$(date +%Y-%m-%d-%H%M).txt` before doing anything else. The configured sources directory is gitignored and exempt from the write guard, so raw unsanitised content is safe there — and only there.
 
-Then confirm `_sources/<topic>/` exists and is non-empty. If it is empty and nothing was pasted, stop and tell the user what to put there: this pipeline is source-only and will not invent commands to fill a gap.
+Then confirm `<sources_dir>/<topic>/` exists and is non-empty. If it is empty and nothing was pasted, stop and tell the user what to put there: this pipeline is source-only and will not invent commands to fill a gap.
 
 **Check the topic fits the content before dispatching.** Resolve the leading binary of each command (unwrapping `sudo`/`env`/`time`) and compare it against the topic. If the dump clearly belongs to a different technology than the topic named — `gem` in `linux`, `npm` in `openshift` — stop and ask the user where it belongs rather than filing it wrongly. The write guard will block it downstream regardless, so catching it here saves a wasted pass.
 
-Then dispatch the `cheatsheet-forge:analyst` agent to read every dump in `_sources/<topic>/` and write `_sources/<topic>/commands.yml`.
+Then dispatch the `cheatsheet-forge:analyst` agent to read every dump in `<sources_dir>/<topic>/` and write `<sources_dir>/<topic>/commands.yml`.
 
 Relay: entry count, uncertain entries, destructive entries, and any questions the analyst raised.
 

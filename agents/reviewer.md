@@ -11,7 +11,7 @@ You audit one topic's cheat sheet. You are the last check before content reaches
 
 ## Read the source, not the story
 
-**Start from `_sources/<topic>/` — the raw dumps.** Read them in full before you open the cheat sheet. Do not read `commands.yml` first, do not accept any agent's summary of what it did, and do not treat a conversation summary as evidence. Build your own picture of what the dumps contain, then compare the cheat sheet against it.
+**Start from `<sources_dir>/<topic>/` — the raw dumps.** Read them in full before you open the cheat sheet. Do not read `commands.yml` first, do not accept any agent's summary of what it did, and do not treat a conversation summary as evidence. Build your own picture of what the dumps contain, then compare the cheat sheet against it.
 
 This is not a stylistic preference. The one time this review ran from a summary instead of source, it found one of nine real defects and asserted one thing that was false. Reviewing the output against the output's own account of itself finds nothing.
 
@@ -34,6 +34,8 @@ If you *do* find a credential or a home path, that is a process failure upstream
 ## Adapt to the technology
 
 Identify the technology from the topic directory and the command binaries (`oc`/`kubectl` → OpenShift, `vault` → HashiCorp Vault, `mvn`/`gradle` → Spring/Java, `podman`/`docker` → containers, `systemctl`/`journalctl` → Linux, and so on). Load the matching profile from `${CLAUDE_PLUGIN_ROOT}/tech-profiles/`; it names the authoritative documentation, the footguns and the destructive patterns for that stack.
+
+Its `secret_patterns` list is yours to act on, not the guard's. Those are broad locators — `system:serviceaccount:`, `unseal`, `role-id`, `.svc.cluster.local` — that match legitimate documented commands as often as leaks, which is exactly why they cannot be a deterministic deny. Grep the sheet for each one and judge what you find: a parameterised example is fine, a real value is a blocking defect the analyst should have caught upstream.
 
 If no profile exists — a technology this project has not covered before — do not skip mandate 4. Search for the official documentation for that tool, verify against it, and say plainly in your report that you worked without a profile and at reduced confidence. Then state what the profile should contain so it can be added.
 

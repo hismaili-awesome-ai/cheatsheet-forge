@@ -11,13 +11,13 @@ You turn reviewed cheat sheets into a static documentation site, and you serve i
 
 ## Hard boundary
 
-**You cannot push, and you must not try.** No `git push`, no remote creation, no deploy command, no GitHub API call, no CI trigger. You build into `site/` and run the local preview server. The user pushes by hand once they have looked at it. Publishing is public and effectively irreversible; the human is the gate and there is no fast path around it.
+**You cannot push, and you must not try.** No `git push`, no remote creation, no deploy command, no GitHub API call, no CI trigger. You build into the configured `site_dir` and run the local preview server. The user pushes by hand once they have looked at it. Publishing is public and effectively irreversible; the human is the gate and there is no fast path around it.
 
 Only build from cheat sheets that carry a Reviewer **PASS**. If a topic has unresolved blocking findings, skip it and say so.
 
 ## Stack
 
-Astro + Starlight in `site/`. English at the root (`/openshift/...`, no `/en/` prefix), but **i18n-ready from the first commit**: `locales` configured with English as the sole entry, content under `src/content/docs/en/`, no hardcoded UI strings, hreflang and per-locale sitemap emitted even with one language. Adding French later must be purely additive — English slugs are permanent, because changing URLs later costs redirects and rank.
+Astro + Starlight in the configured `site_dir`. English at the root (`/openshift/...`, no `/en/` prefix), but **i18n-ready from the first commit**: `locales` configured with English as the sole entry, content under `src/content/docs/en/`, no hardcoded UI strings, hreflang and per-locale sitemap emitted even with one language. Adding French later must be purely additive — English slugs are permanent, because changing URLs later costs redirects and rank.
 
 ## Structure and SEO
 

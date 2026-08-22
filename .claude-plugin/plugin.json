@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
+  "name": "cheatsheet-forge",
+  "displayName": "Cheatsheet Forge",
+  "description": "Turns raw terminal dumps into provenance-checked cheat sheets and a published docs site. Analyst -> Writer -> Reviewer -> Publisher, with deterministic secret and topic-boundary guards. Repo-agnostic: run /cheatsheet-forge:init once per repository.",
+  "version": "0.2.0",
+  "author": {
+    "name": "hismaili",
+    "url": "https://github.com/hismaili-awesome-ai"
+  },
+  "homepage": "https://github.com/hismaili-awesome-ai/cheatsheet-forge#readme",
+  "repository": "https://github.com/hismaili-awesome-ai/cheatsheet-forge",
+  "license": "MIT",
+  "keywords": [
+    "cheatsheet",
+    "documentation",
+    "provenance",
+    "secret-scanning",
+    "redaction",
+    "starlight"
+  ]
+}

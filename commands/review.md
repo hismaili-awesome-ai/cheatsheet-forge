@@ -3,9 +3,11 @@ description: Adversarially audit a cheat sheet against its raw source dumps
 argument-hint: <topic>
 ---
 
+**Requires an initialised repository.** If `.cheatsheet-repo.yml` is absent and `$CHEATSHEET_REPO` is unset, stop and tell the user to run `/cheatsheet-forge:init` first — the scripts exit 2 with that message anyway, and every path below is resolved from that config, not assumed.
+
 Audit the cheat sheet for topic **$ARGUMENTS**.
 
-Dispatch the `cheatsheet-forge:reviewer` agent. It must read `_sources/$ARGUMENTS/` directly and build its own picture of the source before opening `$ARGUMENTS/$ARGUMENTS.md`.
+Dispatch the `cheatsheet-forge:reviewer` agent. It must read `<sources_dir>/$ARGUMENTS/` directly and build its own picture of the source before opening the topic file (`manifest.py` and the config decide its path — `<topic>/<topic>.md` under the default `nested` layout, `<topic>.md` when `flat`).
 
 Do not summarise the source material for it, do not tell it what the writer did or intended, and do not pass along any prior review. A summary is exactly what makes this review fail — it must re-derive.
 

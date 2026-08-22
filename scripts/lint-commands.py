@@ -8,7 +8,8 @@ what counts as a secret.
 The point is shift-left: anything caught here is a cheap fix at extraction
 time, instead of an expensive reviewer finding after a whole doc is written.
 
-    python3 lint-commands.py _sources/<topic>/commands.yml
+    python3 lint-commands.py <topic>
+    python3 lint-commands.py path/to/commands.yml
 
 Exit 0 = clean. Exit 1 = problems, listed on stdout.
 """
@@ -18,6 +19,9 @@ import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import forgeconfig as fc                 # noqa: E402
+
 _spec = importlib.util.spec_from_file_location("guard", HERE.parent / "hooks" / "guard.py")
 guard = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(guard)          # safe: guard.py only acts under __main__
@@ -38,30 +42,44 @@ CREDENTIAL = {"JWT / bearer token", "OpenShift session token", "Private key bloc
 # Values that identify a person, employer, or private network.
 IDENTITY = {"Absolute home directory", "Private IP address", "Internal cluster DNS"}
 
-# Client/employer identifiers seen in this project's dumps. Extend as needed.
-NAMED_ENTITIES = re.compile(r"(?i)\b(loreal|l'oreal|admin\.partner|compass-[a-z0-9-]+)\b")
+def named_entities(cfg):
+    """Client, employer and internal product names come from the repo's own
+    .cheatsheet-repo.yml, never from the plugin — the plugin is published, the
+    config is not."""
+    names = [re.escape(n) for n in cfg.named_entities() if n.strip()]
+    if not names:
+        return None
+    return re.compile(r"(?i)(" + "|".join(names) + r")")
 
 
-def scan(text):
+def scan(text, entities, extra):
     """Return [(severity, name, fragment)] for a single field value."""
     out = []
-    for name, pattern, _hint in guard.SECRETS:
+    for name, pattern, _hint in guard.SECRETS + extra:
         for m in re.finditer(pattern, text):
             frag = m.group(0)
             if guard.SAFE_MARKERS.search(frag):
                 continue
             sev = "LEAK" if name in CREDENTIAL else ("IDENTITY" if name in IDENTITY else "LEAK")
             out.append((sev, name, frag[:60]))
-    for m in NAMED_ENTITIES.finditer(text):
-        out.append(("IDENTITY", "Client/employer identifier", m.group(0)))
+    if entities:
+        for m in entities.finditer(text):
+            out.append(("IDENTITY", "Client/employer identifier", m.group(0)))
     return out
 
 
-def main(path):
-    p = pathlib.Path(path)
+def main(target):
+    cfg = fc.require()
+    p = pathlib.Path(target)
+    if not p.suffix:                      # a topic name, not a path
+        p = cfg.commands_yml(cfg.canonical(target))
+    if not p.is_absolute():
+        p = (pathlib.Path.cwd() / p) if p.exists() else (cfg.root / p)
     if not p.exists():
         print(f"not found: {p}")
         return 1
+    entities = named_entities(cfg)
+    extra = [("Repo-configured secret pattern", pat, None) for pat in cfg.extra_patterns()]
     doc = yaml.safe_load(p.read_text()) or {}
     cmds = doc.get("commands") or []
     if not cmds:
@@ -82,15 +100,14 @@ def main(path):
         fname, _, lineno = ref.rpartition(":")
         # A ref resolves either beside the dumps, or (for content ingested from an
         # existing topic file) relative to the repo root.
-        repo_root = base.parent.parent
-        src = next((cand for cand in (base / fname, repo_root / fname) if cand.exists()), None)
+        src = next((cand for cand in (base / fname, cfg.root / fname) if cand.exists()), None)
         if not fname or src is None:
             problems.append(f"  {cid}: source_ref points at missing file '{fname}'")
         elif not lineno.isdigit() or not (1 <= int(lineno) <= len(src.read_text().splitlines())):
             problems.append(f"  {cid}: source_ref line '{lineno}' out of range for {fname}")
 
         for field in ("command", "verbatim"):
-            for sev, name, frag in scan(str(c.get(field, ""))):
+            for sev, name, frag in scan(str(c.get(field, "")), entities, extra):
                 msg = f"  {cid}.{field}: {name} -> {frag}"
                 (problems if sev == "LEAK" else warnings).append(msg)
 
@@ -115,4 +132,7 @@ def main(path):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "commands.yml"))
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(2)
+    sys.exit(main(sys.argv[1]))

@@ -17,26 +17,32 @@ Statuses:
 The manifest lives beside the dumps in _sources/<topic>/ (gitignored), so a
 fresh clone reads 'virgin' and errs toward preserving content rather than
 destroying it.
+
+The repo, its layout and its sources directory all come from
+.cheatsheet-repo.yml via forgeconfig, so the plugin does NOT have to live
+inside the repo it operates on and makes no assumption about how topic files
+are named. Run /cheatsheet-forge:init first.
 """
 import hashlib
 import json
 import pathlib
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import forgeconfig as fc          # noqa: E402
 
 
-def paths(topic):
-    return (ROOT / topic / f"{topic}.md",
-            ROOT / "_sources" / topic / ".forge-manifest.json")
+def paths(cfg, topic):
+    return cfg.topic_md(topic), cfg.manifest(topic)
 
 
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def check(topic):
-    md, man = paths(topic)
+def check(cfg, topic):
+    md, man = paths(cfg, topic)
     if not md.exists():
         return "absent"
     if not man.exists():
@@ -50,13 +56,13 @@ def check(topic):
     return "ingested" if rec.get("state") == "ingested" else "unmodified"
 
 
-def record(topic, state):
-    md, man = paths(topic)
+def record(cfg, topic, state):
+    md, man = paths(cfg, topic)
     if not md.exists():
         print(f"cannot record: {md} does not exist")
         return 1
     man.parent.mkdir(parents=True, exist_ok=True)
-    man.write_text(json.dumps({"topic": topic, "file": f"{topic}/{topic}.md",
+    man.write_text(json.dumps({"topic": topic, "file": cfg.topic_md_rel(topic),
                                "state": state, "sha256": digest(md)}, indent=2) + "\n")
     print(f"{topic}: recorded as {state} ({digest(md)[:16]}...)")
     return 0
@@ -66,11 +72,12 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(2)
-    action, topic = sys.argv[1], sys.argv[2]
+    cfg = fc.require()
+    action, topic = sys.argv[1], cfg.canonical(sys.argv[2])
     if action == "check":
-        print(check(topic)); sys.exit(0)
+        print(check(cfg, topic)); sys.exit(0)
     if action == "stamp":
-        sys.exit(record(topic, "generated"))
+        sys.exit(record(cfg, topic, "generated"))
     if action == "ingested":
-        sys.exit(record(topic, "ingested"))
+        sys.exit(record(cfg, topic, "ingested"))
     print(f"unknown action: {action}"); sys.exit(2)

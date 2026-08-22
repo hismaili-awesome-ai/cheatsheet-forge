@@ -3,15 +3,17 @@ description: Run the full analyse -> write -> review pipeline for one topic, the
 argument-hint: <topic>
 ---
 
-Arguments: `$ARGUMENTS`. The first token is the topic; anything after it is an inline dump — write it to `_sources/<topic>/inline-$(date +%Y-%m-%d-%H%M).txt` first, exactly as `/analyze` does. Never treat the whole argument string as a path.
+**Requires an initialised repository.** If `.cheatsheet-repo.yml` is absent and `$CHEATSHEET_REPO` is unset, stop and tell the user to run `/cheatsheet-forge:init` first — the scripts exit 2 with that message anyway, and every path below is resolved from that config, not assumed.
 
-Verify `_sources/<topic>/` exists and is non-empty. If not, stop and say what is needed.
+Arguments: `$ARGUMENTS`. The first token is the topic; anything after it is an inline dump — write it to `<sources_dir>/<topic>/inline-$(date +%Y-%m-%d-%H%M).txt` first, exactly as `/analyze` does. Never treat the whole argument string as a path.
+
+Verify `<sources_dir>/<topic>/` exists and is non-empty. If not, stop and say what is needed.
 
 Then call the **Workflow** tool with a script that runs three phases in strict order, passing the topic through `args`:
 
 1. **Analyse** — one `cheatsheet-forge:analyst` agent producing `commands.yml`. If it reports zero entries, stop the workflow and return that fact.
-2. **Write** — one `cheatsheet-forge:writer` agent producing `<topic>/<topic>.md` from that file.
-3. **Review** — one `cheatsheet-forge:reviewer` agent, prompted to read `_sources/<topic>/` first and to receive **no** description of what phases 1 and 2 did. Return its findings and verdict as structured output.
+2. **Write** — one `cheatsheet-forge:writer` agent producing the topic file from that file.
+3. **Review** — one `cheatsheet-forge:reviewer` agent, prompted to read `<sources_dir>/<topic>/` first and to receive **no** description of what phases 1 and 2 did. Return its findings and verdict as structured output.
 
 The phases are strictly sequential — each depends on the previous one's artifact, so use plain sequential `agent()` calls, not `parallel()`.
 

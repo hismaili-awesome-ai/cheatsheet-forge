@@ -6,7 +6,7 @@
     cleanup.py <topic> --purge     PERMANENTLY delete dumps (irreversible)
     cleanup.py --list              show what is archived
 
-_sources/ is gitignored and local-only, so a deleted dump is gone for good — there
+The sources directory is gitignored and local-only, so a deleted dump is gone for good — there
 is no git history to recover it from. Archiving is therefore the default and purge
 must always be asked for explicitly.
 
@@ -19,8 +19,12 @@ import shutil
 import sys
 from datetime import datetime, timezone
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-SRC = ROOT / "_sources"
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import forgeconfig as fc          # noqa: E402
+
+CFG = fc.require()
+ROOT, SRC = CFG.root, CFG.sources
 
 
 def dumps_in(d):
@@ -59,9 +63,9 @@ def clean(topic, purge=False):
         print(f"no sources for '{topic}'")
         return 1
 
-    md = ROOT / topic / f"{topic}.md"
+    md = CFG.topic_md(topic)
     if not md.exists():
-        print(f"WARNING: {topic}/{topic}.md does not exist — nothing was ever produced "
+        print(f"WARNING: {CFG.topic_md_rel(topic)} does not exist — nothing was ever produced "
               f"from these dumps. Cleaning now discards unused source material.")
 
     files = dumps_in(d)
@@ -88,7 +92,7 @@ def clean(topic, purge=False):
         print("  deleted commands.yml (regenerable via /analyze)")
 
     if not purge and files:
-        print(f"\nreversible: python3 cheatsheet-forge/scripts/cleanup.py {topic} --restore")
+        print(f"\nreversible: /cheatsheet-forge:cleanup {topic} --restore")
     return 0
 
 
@@ -98,7 +102,7 @@ if __name__ == "__main__":
         print(__doc__); sys.exit(2)
     if args[0] == "--list":
         sys.exit(do_list())
-    topic, flags = args[0], set(args[1:])
+    topic, flags = CFG.canonical(args[0]), set(args[1:])
     if "--restore" in flags:
         sys.exit(restore(topic))
     sys.exit(clean(topic, purge="--purge" in flags))

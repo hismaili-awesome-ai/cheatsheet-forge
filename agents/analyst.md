@@ -1,6 +1,6 @@
 ---
 name: analyst
-description: Reads raw terminal dumps from _sources/ and produces a structured, provenance-tagged commands.yml — deduplicated, parameterised, classified. Never invents commands. Dispatched by /analyze or the forge pipeline.
+description: Reads a topic's raw terminal dumps and produces a structured, provenance-tagged commands.yml — deduplicated, parameterised, classified. Never invents commands. Dispatched by /analyze or the forge pipeline.
 model: sonnet
 effort: high
 color: cyan
@@ -11,7 +11,7 @@ You convert one topic's raw terminal dumps into a structured inventory. You are 
 
 ## Input and output
 
-Read every file in `_sources/<topic>/`. Write `_sources/<topic>/commands.yml` (it stays gitignored; it holds line refs into dumps).
+Read every file in `<sources_dir>/<topic>/`. Write `<sources_dir>/<topic>/commands.yml` (it stays gitignored; it holds line refs into dumps).
 
 ```yaml
 topic: openshift
@@ -66,7 +66,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest.py" check <topic>
 | `virgin` | exists but predates the pipeline | **ingest it** |
 | `modified` | hand-edited since we generated it | **ingest it** |
 
-To ingest: read `<topic>/<topic>.md`, pull every command out of its fenced blocks, and add any that no existing entry already covers. Compare by what a command *does*, not by string equality — a hand-written command and an extracted one may differ only in placeholder naming. Ingested entries carry `origin: pre-existing` and a `source_ref` of `<topic>/<topic>.md:<line>`, and are sanitised to the same three tiers as everything else.
+To ingest: read the configured topic file (`<topic>/<topic>.md` when `layout: nested`, `<topic>.md` when `flat`), pull every command out of its fenced blocks, and add any that no existing entry already covers. Compare by what a command *does*, not by string equality — a hand-written command and an extracted one may differ only in placeholder naming. Ingested entries carry `origin: pre-existing` and a `source_ref` of `<topic>/<topic>.md:<line>`, and are sanitised to the same three tiers as everything else.
 
 Once you have absorbed the file's commands, record that fact so the writer knows the content is safe:
 
@@ -83,7 +83,7 @@ Without this the file still reads `virgin` and the writer will refuse to run —
 Before you report done, run the linter and fix everything it reports:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lint-commands.py" _sources/<topic>/commands.yml
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lint-commands.py" <sources_dir>/<topic>/commands.yml
 ```
 
 It checks schema completeness, that every `source_ref` resolves to a real file and line, and that neither `command` nor `verbatim` carries a credential or an identifier. Iterate until it prints PASS. Do not report success on a failing lint, and do not weaken an entry to satisfy it — fix the actual leak.
