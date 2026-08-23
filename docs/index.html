@@ -386,6 +386,42 @@ table{border-collapse:collapse; width:100%}
 .gaps b{color:var(--text); font-weight:500; font-family:var(--mono); font-size:.82rem}
 .gaps a{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent}
 .gaps a:hover{border-bottom-color:currentColor}
+
+/* suggestions — shell-completion register: dense, monospace, keyboard-first */
+.srch__field{position:relative}
+.sugg{
+  position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:40;
+  margin:0; padding:.25rem 0; list-style:none; max-height:19rem; overflow-y:auto;
+  background:var(--surface); border:1px solid var(--line); border-radius:3px;
+  box-shadow:0 12px 32px -14px rgba(0,0,0,.55);
+}
+.sugg[hidden]{display:none}
+.sugg__i{
+  display:flex; gap:.75rem; align-items:baseline; padding:.42rem .85rem;
+  cursor:pointer; font-family:var(--mono); font-size:.79rem;
+}
+.sugg__i{border-left:2px solid transparent}
+.sugg__i[aria-selected="true"]{
+  background:color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-left-color:var(--accent);
+}
+.sugg__i[aria-selected="true"] .sugg__t{color:var(--accent)}
+.sugg__i:hover{background:var(--surface-2)}
+.sugg__k{
+  flex:none; width:5.2rem; font-size:.58rem; letter-spacing:.09em; text-transform:uppercase;
+}
+.sugg__k[data-k="binary"]{color:var(--accent)}
+.sugg__k[data-k="destructive"]{color:var(--stop)}
+.sugg__k[data-k="technology"]{color:var(--ok)}
+.sugg__t{flex:1; min-width:0; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.sugg__t b{font-weight:600; color:var(--accent)}
+.sugg__n{flex:none; font-size:.67rem; color:var(--faint)}
+.sugg__foot{
+  border-top:1px solid var(--line-soft); margin-top:.25rem; padding:.45rem .85rem .25rem;
+  font-family:var(--mono); font-size:.63rem; color:var(--faint);
+  display:flex; gap:.9rem; flex-wrap:wrap;
+}
+.srch__k[data-hint="tab"]{color:var(--accent); border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -682,13 +718,18 @@ TOPIC BOUNDARY — blocking:
     </div>
 
     <div class="srch fade" role="search">
-      <label class="srch__box" for="q">
-        <span class="srch__pre" aria-hidden="true">&gt;</span>
-        <input class="srch__in" id="q" type="search" autocomplete="off" spellcheck="false"
-               placeholder="rm -rf, vault, oc delete, pod…" aria-describedby="q-stat">
-        <button class="srch__clr" type="button" id="q-clear" hidden>clear</button>
-        <span class="srch__k" aria-hidden="true">/</span>
-      </label>
+      <div class="srch__field">
+        <label class="srch__box" for="q">
+          <span class="srch__pre" aria-hidden="true">&gt;</span>
+          <input class="srch__in" id="q" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="rm -rf, vault, oc delete, pod…" aria-describedby="q-stat"
+                 role="combobox" aria-expanded="false" aria-controls="q-sugg"
+                 aria-autocomplete="both" aria-haspopup="listbox">
+          <button class="srch__clr" type="button" id="q-clear" hidden>clear</button>
+          <span class="srch__k" id="q-kbd" aria-hidden="true">/</span>
+        </label>
+        <ul class="sugg" id="q-sugg" role="listbox" aria-label="Search suggestions" hidden></ul>
+      </div>
 
       <div class="chips" id="q-chips"></div>
 
@@ -2162,7 +2203,9 @@ TOPIC BOUNDARY — blocking:
       var chips = document.getElementById('q-chips');
       var clear = document.getElementById('q-clear');
       var gapsEl = document.getElementById('q-gaps');
-      var LIMIT = 40;
+      var sugg = document.getElementById('q-sugg');
+      var kbd = document.getElementById('q-kbd');
+      var LIMIT = 40, SUGG_MAX = 8;
       var activeTech = null;
 
       var KIND_ORDER = { destructive: 0, binary: 1, footgun: 2 };
@@ -2179,6 +2222,113 @@ TOPIC BOUNDARY — blocking:
         if (i < 0) return safe;
         return safe.slice(0,i) + '<mark>' + safe.slice(i, i+q.length) + '</mark>' + safe.slice(i+q.length);
       }
+      function boldMatch(text, q){
+        var safe = esc(text);
+        if (!q) return safe;
+        var i = safe.toLowerCase().indexOf(q.toLowerCase());
+        if (i < 0) return safe;
+        return safe.slice(0,i) + '<b>' + safe.slice(i, i+q.length) + '</b>' + safe.slice(i+q.length);
+      }
+
+      /* ---- suggestion pool -------------------------------------------
+         Footgun titles are whole sentences, so they make poor completions
+         and are left out here. They still appear in the results below.   */
+      var pool = [], seen = {};
+      index.records.forEach(function(r){
+        if (r.kind !== 'binary' && r.kind !== 'destructive') return;
+        var key = r.kind + ' ' + r.title;
+        if (seen[key]) return;
+        seen[key] = 1;
+        pool.push({ title: r.title, kind: r.kind, tech: r.tech });
+      });
+      (index.profiles || []).forEach(function(pr){
+        // Several technologies share a name with their own binary (vault,
+        // podman, git). Offering both spells the same completion twice.
+        if (seen['binary ' + pr.tech]) return;
+        var n = index.records.filter(function(r){ return r.tech.indexOf(pr.tech) > -1; }).length;
+        pool.push({ title: pr.tech, kind: 'technology', tech: [pr.tech], count: n });
+      });
+
+      function suggestFor(q){
+        if (!q) return [];
+        q = q.toLowerCase();
+        var pre = [], sub = [];
+        pool.forEach(function(it){
+          var t = it.title.toLowerCase();
+          if (t === q) return;
+          if (t.indexOf(q) === 0) pre.push(it);
+          else if (t.indexOf(q) > -1) sub.push(it);
+        });
+        var byLen = function(a,b){
+          return a.title.length - b.title.length || a.title.localeCompare(b.title);
+        };
+        pre.sort(byLen); sub.sort(byLen);
+        return pre.concat(sub).slice(0, SUGG_MAX);
+      }
+
+      var current = [], activeIdx = -1, ghostLen = 0, deleting = false, composing = false;
+
+      function closeSugg(){
+        sugg.hidden = true; sugg.innerHTML = '';
+        input.setAttribute('aria-expanded','false');
+        input.removeAttribute('aria-activedescendant');
+        current = []; activeIdx = -1;
+        if (kbd) { kbd.textContent = '/'; kbd.removeAttribute('data-hint'); }
+      }
+
+      function paintSugg(items, q){
+        if (!items.length) { closeSugg(); return; }
+        current = items; activeIdx = -1;
+        var rows = items.map(function(it, i){
+          var right = (it.count != null) ? (it.count + ' entries') : it.tech.join(' / ');
+          return '<li class="sugg__i" role="option" id="q-opt-' + i + '" aria-selected="false" data-i="' + i + '">' +
+                   '<span class="sugg__k" data-k="' + it.kind + '">' + it.kind + '</span>' +
+                   '<span class="sugg__t">' + boldMatch(it.title, q) + '</span>' +
+                   '<span class="sugg__n">' + esc(right) + '</span>' +
+                 '</li>';
+        }).join('');
+        var foot = '<li class="sugg__foot" role="presentation">' +
+                     '<span>up/down move</span><span>tab complete</span>' +
+                     '<span>enter search</span><span>esc dismiss</span></li>';
+        sugg.innerHTML = rows + foot;
+        sugg.hidden = false;
+        input.setAttribute('aria-expanded','true');
+      }
+
+      function setActive(i){
+        var opts = sugg.querySelectorAll('.sugg__i');
+        if (!opts.length) return;
+        if (activeIdx > -1 && opts[activeIdx]) opts[activeIdx].setAttribute('aria-selected','false');
+        activeIdx = i;
+        if (activeIdx < 0) { input.removeAttribute('aria-activedescendant'); return; }
+        opts[activeIdx].setAttribute('aria-selected','true');
+        input.setAttribute('aria-activedescendant', 'q-opt-' + activeIdx);
+        if (opts[activeIdx].scrollIntoView) opts[activeIdx].scrollIntoView({ block: 'nearest' });
+      }
+
+      /* Inline completion: extend the typed text with the best prefix match
+         and select the addition, so the next keystroke overwrites it. The
+         query driving the results stays the typed part, never the ghost.  */
+      function applyGhost(typed, items){
+        ghostLen = 0;
+        if (!typed || !items.length) return;
+        var top = items[0];
+        if (top.title.toLowerCase().indexOf(typed.toLowerCase()) !== 0) return;
+        if (top.title.length <= typed.length) return;
+        input.value = typed + top.title.slice(typed.length);
+        try { input.setSelectionRange(typed.length, top.title.length); } catch (e) {}
+        ghostLen = typed.length;
+        if (kbd) { kbd.textContent = 'tab'; kbd.setAttribute('data-hint','tab'); }
+      }
+
+      function accept(item){
+        input.value = item.title;
+        ghostLen = 0;
+        closeSugg();
+        render(item.title);
+        input.focus();
+        try { input.setSelectionRange(item.title.length, item.title.length); } catch (e) {}
+      }
 
       function score(rec, q){
         var t = rec.title.toLowerCase();
@@ -2190,15 +2340,16 @@ TOPIC BOUNDARY — blocking:
         return -1;
       }
 
-      function render(){
-        var q = input.value.trim().toLowerCase();
+      function render(qRaw){
+        var base = (qRaw != null) ? qRaw : (ghostLen ? input.value.slice(0, ghostLen) : input.value);
+        var q = base.trim().toLowerCase();
         clear.hidden = !q && !activeTech;
 
         var hits = index.records;
         if (activeTech) hits = hits.filter(function(r){ return r.tech.indexOf(activeTech) > -1; });
 
         if (q) {
-          hits = hits.map(function(r){ return { r:r, s:score(r,q) }; })
+          hits = hits.map(function(r){ return { r: r, s: score(r, q) }; })
                      .filter(function(x){ return x.s >= 0; })
                      .sort(function(a,b){
                        return a.s - b.s ||
@@ -2218,16 +2369,15 @@ TOPIC BOUNDARY — blocking:
             ' If the guard should know it, <a href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/issues/new?labels=tech-profile&amp;template=tech-profile.yml">propose a profile</a>.</p>';
         } else {
           var html = shown.map(function(r){
-            var techLabel = r.tech.join(' · ');
             return '<div class="row">' +
               '<span class="row__k" data-k="' + r.kind + '">' + r.kind + '</span>' +
               '<span class="row__t">' + mark(r.title, q) + '</span>' +
-              '<span class="row__tech">' + esc(techLabel) + (r.shared ? ' ⌥' : '') + '</span>' +
+              '<span class="row__tech">' + esc(r.tech.join(' / ')) + (r.shared ? ' *' : '') + '</span>' +
               (r.body ? '<span class="row__b">' + mark(r.body, q) + '</span>' : '') +
               '</div>';
           }).join('');
           if (hits.length > LIMIT) {
-            html += '<p class="row__more">' + (hits.length - LIMIT) + ' more — narrow the query</p>';
+            html += '<p class="row__more">' + (hits.length - LIMIT) + ' more, narrow the query</p>';
           }
           res.innerHTML = html;
         }
@@ -2235,11 +2385,62 @@ TOPIC BOUNDARY — blocking:
         var c = index.counts || {};
         stat.textContent = (q || activeTech)
           ? hits.length + ' of ' + index.records.length + ' entries'
-          : c.binaries + ' binaries · ' + c.destructive + ' destructive patterns · ' +
-            c.footguns + ' footguns · ' + c.profiles + ' technologies';
+          : c.binaries + ' binaries / ' + c.destructive + ' destructive patterns / ' +
+            c.footguns + ' footguns / ' + c.profiles + ' technologies';
       }
 
-      /* technology filter chips */
+      input.addEventListener('compositionstart', function(){ composing = true; });
+      input.addEventListener('compositionend', function(){ composing = false; onInput(); });
+      input.addEventListener('beforeinput', function(e){
+        deleting = !!(e.inputType && e.inputType.indexOf('delete') === 0);
+      });
+
+      function onInput(){
+        if (composing) return;
+        ghostLen = 0;
+        var typed = input.value;
+        var items = suggestFor(typed);
+        paintSugg(items, typed);
+        if (!deleting) applyGhost(typed, items);
+        deleting = false;
+        render(typed);
+      }
+      input.addEventListener('input', onInput);
+
+      input.addEventListener('keydown', function(e){
+        var open = !sugg.hidden && current.length > 0;
+        if (e.key === 'ArrowDown' && open) {
+          e.preventDefault();
+          setActive(activeIdx + 1 >= current.length ? 0 : activeIdx + 1);
+        } else if (e.key === 'ArrowUp' && open) {
+          e.preventDefault();
+          setActive(activeIdx - 1 < 0 ? current.length - 1 : activeIdx - 1);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (open && activeIdx > -1) { accept(current[activeIdx]); }
+          else { ghostLen = 0; closeSugg(); render(input.value); }
+        } else if (e.key === 'Tab') {
+          if (open && activeIdx > -1) { e.preventDefault(); accept(current[activeIdx]); }
+          else if (ghostLen) { e.preventDefault(); accept({ title: input.value }); }
+        } else if (e.key === 'ArrowRight' && ghostLen &&
+                   input.selectionStart === ghostLen &&
+                   input.selectionEnd === input.value.length) {
+          ghostLen = 0;
+          if (kbd) { kbd.textContent = '/'; kbd.removeAttribute('data-hint'); }
+        } else if (e.key === 'Escape') {
+          if (open) { e.preventDefault(); closeSugg(); }
+          else { input.value = ''; ghostLen = 0; render(''); }
+        }
+      });
+
+      sugg.addEventListener('mousedown', function(e){
+        var li = e.target.closest ? e.target.closest('.sugg__i') : null;
+        if (!li) return;
+        e.preventDefault();
+        accept(current[parseInt(li.getAttribute('data-i'), 10)]);
+      });
+      input.addEventListener('blur', function(){ setTimeout(closeSugg, 120); });
+
       (index.profiles || []).forEach(function(pr){
         var b = document.createElement('button');
         b.type = 'button';
@@ -2252,6 +2453,7 @@ TOPIC BOUNDARY — blocking:
           Array.prototype.forEach.call(chips.children, function(el){
             el.setAttribute('aria-pressed', String(el === b && activeTech !== null));
           });
+          closeSugg();
           render();
         });
         chips.appendChild(b);
@@ -2260,20 +2462,17 @@ TOPIC BOUNDARY — blocking:
       if (gapsEl && index.gaps && index.gaps.length) {
         gapsEl.innerHTML = '<b>' + index.gaps.map(esc).join(', ') + '</b> ' +
           (index.gaps.length === 1 ? 'has' : 'have') +
-          ' no destructive patterns declared yet — the reviewer still audits them, but with less to go on. ' +
+          ' no destructive patterns declared yet, so the reviewer audits them with less to go on. ' +
           '<a href="https://github.com/hismaili-awesome-ai/cheatsheet-forge/issues/new?labels=tech-profile&amp;template=tech-profile.yml">Fill a gap</a>.';
         gapsEl.hidden = false;
       }
 
-      input.addEventListener('input', render);
       clear.addEventListener('click', function(){
-        input.value = ''; activeTech = null;
+        input.value = ''; activeTech = null; ghostLen = 0;
         Array.prototype.forEach.call(chips.children, function(el){ el.setAttribute('aria-pressed','false'); });
-        render(); input.focus();
+        closeSugg(); render(''); input.focus();
       });
-      input.addEventListener('keydown', function(e){
-        if (e.key === 'Escape') { input.value = ''; render(); }
-      });
+
       document.addEventListener('keydown', function(e){
         if (e.key === '/' && document.activeElement !== input &&
             !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
@@ -2281,7 +2480,7 @@ TOPIC BOUNDARY — blocking:
         }
       });
 
-      render();
+      render('');
     }
   }
 
