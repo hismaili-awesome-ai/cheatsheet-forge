@@ -102,7 +102,7 @@ table{border-collapse:collapse; width:100%}
   backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
   border-bottom:1px solid var(--line-soft);
 }
-.mast__in{display:flex; align-items:center; gap:.9rem; padding:.8rem 0}
+.mast__in{display:flex; align-items:center; gap:.9rem; padding-top:.8rem; padding-bottom:.8rem}
 .mast__name{font-family:var(--mono); font-size:.85rem; font-weight:600; text-decoration:none}
 .mast__v{font-family:var(--mono); font-size:.68rem; color:var(--faint)}
 .mast__sp{flex:1}
@@ -112,7 +112,7 @@ table{border-collapse:collapse; width:100%}
 @media (max-width:52rem){ .mast__nav a[data-opt]{display:none} }
 
 /* ═══ hero ═════════════════════════════════════════════════════════════ */
-.hero{padding:clamp(3.5rem,9vw,7rem) 0 clamp(2.5rem,5vw,4rem)}
+.hero{padding-top:clamp(3.5rem,9vw,7rem); padding-bottom:clamp(2.5rem,5vw,4rem)}
 .hero__h{
   font-size:clamp(1.85rem,6.2vw,3.9rem); letter-spacing:-.035em; line-height:1.05;
   max-width:19ch; font-weight:600; overflow-wrap:break-word; hyphens:auto;
@@ -165,7 +165,7 @@ table{border-collapse:collapse; width:100%}
 .term__gate{color:var(--text); font-weight:500}
 
 /* ═══ sections ═════════════════════════════════════════════════════════ */
-.sec{padding:clamp(3.5rem,7vw,6rem) 0; border-top:1px solid var(--line-soft)}
+.sec{padding-top:clamp(3.5rem,7vw,6rem); padding-bottom:clamp(3.5rem,7vw,6rem); border-top:1px solid var(--line-soft)}
 .sec__h{font-size:clamp(1.5rem,4.6vw,2.35rem); letter-spacing:-.03em; max-width:24ch; overflow-wrap:break-word}
 .sec__lede{margin-top:1.1rem}
 .sec__intro{max-width:64rem; margin-bottom:clamp(2.2rem,4vw,3.2rem)}
@@ -298,7 +298,7 @@ table{border-collapse:collapse; width:100%}
 
 /* ═══ footer ═══════════════════════════════════════════════════════════ */
 .foot{
-  border-top:1px solid var(--line-soft); padding:1.8rem 0 3rem;
+  border-top:1px solid var(--line-soft); padding-top:1.8rem; padding-bottom:3rem;
   display:flex; gap:1.3rem; flex-wrap:wrap; align-items:baseline;
   font-family:var(--mono); font-size:.72rem; color:var(--faint);
 }
@@ -391,11 +391,12 @@ table{border-collapse:collapse; width:100%}
 .srch__field{position:relative}
 .sugg{
   position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:40;
-  margin:0; padding:.25rem 0; list-style:none; max-height:19rem; overflow-y:auto;
+  margin:0; padding:.25rem 0; list-style:none; max-height:min(19rem,55vh); overflow-y:auto;
   background:var(--surface); border:1px solid var(--line); border-radius:3px;
   box-shadow:0 12px 32px -14px rgba(0,0,0,.55);
 }
 .sugg[hidden]{display:none}
+.sugg--up{top:auto; bottom:calc(100% + 4px)}
 .sugg__i{
   display:flex; gap:.75rem; align-items:baseline; padding:.42rem .85rem;
   cursor:pointer; font-family:var(--mono); font-size:.79rem;
@@ -422,6 +423,17 @@ table{border-collapse:collapse; width:100%}
   display:flex; gap:.9rem; flex-wrap:wrap;
 }
 .srch__k[data-hint="tab"]{color:var(--accent); border-color:var(--accent)}
+
+@media (max-width:34rem){
+  .sugg__i{flex-wrap:wrap; gap:.1rem .6rem; padding:.5rem .8rem}
+  .sugg__k{width:auto; order:1}
+  .sugg__n{order:2; margin-left:auto}
+  .sugg__t{order:3; flex-basis:100%; white-space:normal; overflow:visible;
+           text-overflow:clip; overflow-wrap:anywhere}
+}
+/* The hint row names keys a touch device does not have. */
+@media (pointer:coarse){ .sugg__foot{display:none} }
+
 </style>
 </head>
 <body>
@@ -2293,6 +2305,12 @@ TOPIC BOUNDARY — blocking:
         sugg.innerHTML = rows + foot;
         sugg.hidden = false;
         input.setAttribute('aria-expanded','true');
+        // Open upward when the space below the field cannot hold the list.
+        sugg.classList.remove('sugg--up');
+        var fieldBox = input.getBoundingClientRect();
+        var needed = Math.min(sugg.scrollHeight, window.innerHeight * 0.55);
+        var below = window.innerHeight - fieldBox.bottom;
+        if (below < needed + 12 && fieldBox.top > below) sugg.classList.add('sugg--up');
       }
 
       function setActive(i){
