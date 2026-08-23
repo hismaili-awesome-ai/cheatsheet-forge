@@ -226,6 +226,20 @@ match legitimate documented commands as often as leaks (`system:serviceaccount:`
 `unseal`); the reviewer consumes them and judges what it finds. The guard blocks only on
 shapes that are credentials by construction.
 
+## Documentation site
+
+`docs/` is a static GitHub Pages site, served from `main` with no build step. The one
+generated part is the guard search index, which is rebuilt from the profiles:
+
+```bash
+python3 scripts/build-search-index.py           # rewrite the embedded index
+python3 scripts/build-search-index.py --check   # exit 3 if stale, write nothing
+```
+
+It reads every `tech-profiles/*.yml` and rewrites the JSON between the `GUARD-INDEX`
+markers in `docs/index.html`. **Run it after adding or editing a profile**, or the site
+will advertise a guard that differs from the one that runs. `--check` is the CI form.
+
 ## Testing
 
 ```bash
